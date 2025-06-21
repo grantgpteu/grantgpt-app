@@ -33,7 +33,7 @@ jobs:
           
           # Stop services first to prevent file locks
           cd deployment/docker_compose
-          docker compose -f docker-compose.prod.yml -p danswer-stack down || true
+          docker compose -f docker-compose.prod.yml -p onyx-stack down || true
           cd ~/grantgpt/
           
           # Improved cleanup: Remove directories recursively, preserve specific paths
@@ -99,6 +99,6 @@ jobs:
           cp ~/env_files/.env.nginx .env.nginx
           
           # Deploy
-          docker compose -f docker-compose.prod.yml -p danswer-stack up -d --build --force-recreate
+          docker compose -f docker-compose.prod.yml -p onyx-stack up -d --build --force-recreate
           
         EOF

@@ -36,7 +36,9 @@ export const TokenRateLimitTable = ({
   isAdmin,
 }: TokenRateLimitTableArgs) => {
   const shouldRenderGroupName = () =>
-    tokenRateLimits.length > 0 && tokenRateLimits[0].group_name !== undefined;
+    tokenRateLimits.length > 0 &&
+    tokenRateLimits[0] !== undefined &&
+    tokenRateLimits[0].group_name !== undefined;
 
   const handleEnabledChange = (id: number) => {
     const tokenRateLimit = tokenRateLimits.find(
@@ -109,7 +111,7 @@ export const TokenRateLimitTable = ({
                       }
                       className={`px-1 py-0.5 rounded select-none w-24 ${
                         isAdmin
-                          ? "hover:bg-hover-light cursor-pointer"
+                          ? "hover:bg-accent-background cursor-pointer"
                           : "opacity-50"
                       }`}
                     >
@@ -131,7 +133,7 @@ export const TokenRateLimitTable = ({
                   </div>
                 </TableCell>
                 {shouldRenderGroupName() && (
-                  <TableCell className="font-bold text-emphasis">
+                  <TableCell className="font-bold text-text-darker">
                     {tokenRateLimit.group_name}
                   </TableCell>
                 )}
@@ -176,7 +178,10 @@ export const GenericTokenRateLimitTable = ({
   responseMapper?: (data: any) => TokenRateLimitDisplay[];
   isAdmin?: boolean;
 }) => {
-  const { data, isLoading, error } = useSWR(fetchUrl, errorHandlingFetcher);
+  const { data, isLoading, error } = useSWR<TokenRateLimitDisplay[]>(
+    fetchUrl,
+    errorHandlingFetcher
+  );
 
   if (isLoading) {
     return <ThreeDotsLoader />;
@@ -193,7 +198,7 @@ export const GenericTokenRateLimitTable = ({
 
   return (
     <TokenRateLimitTable
-      tokenRateLimits={processedData}
+      tokenRateLimits={processedData ?? []}
       fetchUrl={fetchUrl}
       title={title}
       description={description}

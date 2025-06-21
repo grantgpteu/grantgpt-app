@@ -1,9 +1,14 @@
 """
 This test tests the happy path for curator permissions
 """
-from danswer.db.enums import AccessType
-from danswer.db.models import UserRole
-from danswer.server.documents.models import DocumentSource
+
+import os
+
+import pytest
+
+from onyx.db.enums import AccessType
+from onyx.db.models import UserRole
+from onyx.server.documents.models import DocumentSource
 from tests.integration.common_utils.managers.cc_pair import CCPairManager
 from tests.integration.common_utils.managers.connector import ConnectorManager
 from tests.integration.common_utils.managers.credential import CredentialManager
@@ -12,10 +17,14 @@ from tests.integration.common_utils.managers.user import UserManager
 from tests.integration.common_utils.managers.user_group import UserGroupManager
 
 
+@pytest.mark.skipif(
+    os.environ.get("ENABLE_PAID_ENTERPRISE_EDITION_FEATURES", "").lower() != "true",
+    reason="Curator tests are enterprise only",
+)
 def test_whole_curator_flow(reset: None) -> None:
     # Creating an admin user (first user created is automatically an admin)
     admin_user: DATestUser = UserManager.create(name="admin_user")
-    assert UserManager.verify_role(admin_user, UserRole.ADMIN)
+    assert UserManager.is_role(admin_user, UserRole.ADMIN)
 
     # Creating a curator
     curator: DATestUser = UserManager.create(name="curator")
@@ -36,7 +45,7 @@ def test_whole_curator_flow(reset: None) -> None:
         user_to_set_as_curator=curator,
         user_performing_action=admin_user,
     )
-    assert UserManager.verify_role(curator, UserRole.CURATOR)
+    assert UserManager.is_role(curator, UserRole.CURATOR)
 
     # Creating a credential as curator
     test_credential = CredentialManager.create(
@@ -89,22 +98,26 @@ def test_whole_curator_flow(reset: None) -> None:
     )
 
 
+@pytest.mark.skipif(
+    os.environ.get("ENABLE_PAID_ENTERPRISE_EDITION_FEATURES", "").lower() != "true",
+    reason="Curator tests are enterprise only",
+)
 def test_global_curator_flow(reset: None) -> None:
     # Creating an admin user (first user created is automatically an admin)
     admin_user: DATestUser = UserManager.create(name="admin_user")
-    assert UserManager.verify_role(admin_user, UserRole.ADMIN)
+    assert UserManager.is_role(admin_user, UserRole.ADMIN)
 
     # Creating a user
     global_curator: DATestUser = UserManager.create(name="global_curator")
-    assert UserManager.verify_role(global_curator, UserRole.BASIC)
+    assert UserManager.is_role(global_curator, UserRole.BASIC)
 
     # Set the user to a global curator
     UserManager.set_role(
         user_to_set=global_curator,
         target_role=UserRole.GLOBAL_CURATOR,
-        user_to_perform_action=admin_user,
+        user_performing_action=admin_user,
     )
-    assert UserManager.verify_role(global_curator, UserRole.GLOBAL_CURATOR)
+    assert UserManager.is_role(global_curator, UserRole.GLOBAL_CURATOR)
 
     # Creating a user group containing the global curator
     user_group_1 = UserGroupManager.create(

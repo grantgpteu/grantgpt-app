@@ -5,7 +5,7 @@ import { GroupsIcon } from "@/components/icons/icons";
 import { GroupDisplay } from "./GroupDisplay";
 import { useSpecificUserGroup } from "./hook";
 import { ThreeDotsLoader } from "@/components/Loading";
-import { useConnectorCredentialIndexingStatus, useUsers } from "@/lib/hooks";
+import { useConnectorStatus, useUsers } from "@/lib/hooks";
 import { useRouter } from "next/navigation";
 import { BackButton } from "@/components/BackButton";
 import { AdminPageTitle } from "@/components/admin/Title";
@@ -24,12 +24,12 @@ const Page = (props: { params: Promise<{ groupId: string }> }) => {
     data: users,
     isLoading: userIsLoading,
     error: usersError,
-  } = useUsers();
+  } = useUsers({ includeApiKeys: true });
   const {
     data: ccPairs,
     isLoading: isCCPairsLoading,
     error: ccPairsError,
-  } = useConnectorCredentialIndexingStatus();
+  } = useConnectorStatus();
 
   if (userGroupIsLoading || userIsLoading || isCCPairsLoading) {
     return (

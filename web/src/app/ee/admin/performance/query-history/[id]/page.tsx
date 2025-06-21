@@ -95,6 +95,9 @@ export default function QueryPage(props: { params: Promise<{ id: string }> }) {
       <CardSection className="mt-4">
         <Title>Chat Session Details</Title>
 
+        <Text className="flex flex-wrap whitespace-normal mt-1 text-sm">
+          {chatSessionSnapshot.assistant_name}
+        </Text>
         <Text className="flex flex-wrap whitespace-normal mt-1 text-xs">
           {chatSessionSnapshot.user_email &&
             `${chatSessionSnapshot.user_email}, `}
@@ -106,9 +109,7 @@ export default function QueryPage(props: { params: Promise<{ id: string }> }) {
 
         <div className="flex flex-col">
           {chatSessionSnapshot.messages.map((message) => {
-            return (
-              <MessageDisplay key={message.time_created} message={message} />
-            );
+            return <MessageDisplay key={message.id} message={message} />;
           })}
         </div>
       </CardSection>

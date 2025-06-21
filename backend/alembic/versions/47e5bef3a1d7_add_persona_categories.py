@@ -5,6 +5,7 @@ Revises: dfbe9e93d3c7
 Create Date: 2024-11-05 18:55:02.221064
 
 """
+
 from alembic import op
 import sqlalchemy as sa
 
@@ -40,6 +41,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint("fk_persona_category", "persona", type_="foreignkey")
+    op.drop_constraint("persona_category_id_fkey", "persona", type_="foreignkey")
     op.drop_column("persona", "category_id")
     op.drop_table("persona_category")

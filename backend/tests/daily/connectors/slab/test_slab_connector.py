@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from danswer.configs.constants import DocumentSource
-from danswer.connectors.models import Document
-from danswer.connectors.slab.connector import SlabConnector
+from onyx.configs.constants import DocumentSource
+from onyx.connectors.models import Document
+from onyx.connectors.slab.connector import SlabConnector
 
 
 def load_test_data(file_name: str = "test_slab_data.json") -> dict[str, str]:
@@ -63,6 +63,7 @@ def test_slab_connector_basic(slab_connector: SlabConnector) -> None:
     assert len(target_test_doc.sections) == 1
     section = target_test_doc.sections[0]
     # Need to replace the weird apostrophe with a normal one
+    assert section.text is not None
     assert section.text.replace("\u2019", "'") == desired_test_data["section_text"]
     assert section.link == desired_test_data["link"]
 

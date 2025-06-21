@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from danswer.natural_language_processing.search_nlp_models import EmbeddingModel
+from onyx.natural_language_processing.search_nlp_models import EmbeddingModel
 from shared_configs.enums import EmbedTextType
 from shared_configs.model_server_models import EmbeddingProvider
 
@@ -71,12 +71,13 @@ def litellm_embedding_model() -> EmbeddingModel:
         normalize=True,
         query_prefix=None,
         passage_prefix=None,
-        api_key=os.getenv("LITE_LLM_API_KEY"),
+        api_key=os.getenv("LITELLM_API_KEY"),
         provider_type=EmbeddingProvider.LITELLM,
-        api_url=os.getenv("LITE_LLM_API_URL"),
+        api_url=os.getenv("LITELLM_API_URL"),
     )
 
 
+@pytest.mark.skip(reason="re-enable when we can get the correct litellm key and url")
 def test_litellm_embedding(litellm_embedding_model: EmbeddingModel) -> None:
     _run_embeddings(VALID_SAMPLE, litellm_embedding_model, 1536)
     _run_embeddings(TOO_LONG_SAMPLE, litellm_embedding_model, 1536)
@@ -107,7 +108,7 @@ def azure_embedding_model() -> EmbeddingModel:
     return EmbeddingModel(
         server_host="localhost",
         server_port=9000,
-        model_name="text-embedding-3-large",
+        model_name="text-embedding-3-small",
         normalize=True,
         query_prefix=None,
         passage_prefix=None,
@@ -115,6 +116,11 @@ def azure_embedding_model() -> EmbeddingModel:
         provider_type=EmbeddingProvider.AZURE,
         api_url=os.getenv("AZURE_API_URL"),
     )
+
+
+def test_azure_embedding(azure_embedding_model: EmbeddingModel) -> None:
+    _run_embeddings(VALID_SAMPLE, azure_embedding_model, 1536)
+    _run_embeddings(TOO_LONG_SAMPLE, azure_embedding_model, 1536)
 
 
 # NOTE (chris): this test doesn't work, and I do not know why

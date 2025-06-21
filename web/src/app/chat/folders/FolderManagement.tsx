@@ -8,7 +8,8 @@ export async function createFolder(folderName: string): Promise<number> {
     body: JSON.stringify({ folder_name: folderName }),
   });
   if (!response.ok) {
-    throw new Error("Failed to create folder");
+    const errorData = await response.json();
+    throw new Error(errorData.detail || "Failed to create folder");
   }
   const data = await response.json();
   return data;
@@ -76,5 +77,21 @@ export async function updateFolderName(
   });
   if (!response.ok) {
     throw new Error("Failed to update folder name");
+  }
+}
+
+// Function to update folder display priorities
+export async function updateFolderDisplayPriorities(
+  displayPriorityMap: Record<number, number>
+): Promise<void> {
+  const response = await fetch(`/api/folder/reorder`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ display_priority_map: displayPriorityMap }),
+  });
+  if (!response.ok) {
+    throw new Error("Failed to update folder display priorities");
   }
 }

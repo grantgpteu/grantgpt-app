@@ -1,16 +1,32 @@
-export enum GatingType {
-  FULL = "full",
-  PARTIAL = "partial",
-  NONE = "none",
+export enum ApplicationStatus {
+  PAYMENT_REMINDER = "payment_reminder",
+  GATED_ACCESS = "gated_access",
+  ACTIVE = "active",
+}
+
+export enum QueryHistoryType {
+  DISABLED = "disabled",
+  ANONYMIZED = "anonymized",
+  NORMAL = "normal",
 }
 
 export interface Settings {
-  maximum_chat_retention_days: number | null;
+  anonymous_user_enabled: boolean;
+  anonymous_user_path?: string;
+  maximum_chat_retention_days?: number | null;
   notifications: Notification[];
   needs_reindexing: boolean;
   gpu_enabled: boolean;
-  product_gating: GatingType;
+  pro_search_enabled?: boolean;
+  application_status: ApplicationStatus;
   auto_scroll: boolean;
+  temperature_override_enabled: boolean;
+  query_history_type: QueryHistoryType;
+
+  // Image processing settings
+  image_extraction_and_analysis_enabled?: boolean;
+  search_time_image_analysis_enabled?: boolean;
+  image_analysis_max_size_mb?: number | null;
 }
 
 export enum NotificationType {
@@ -52,7 +68,6 @@ export interface EnterpriseSettings {
   custom_popup_header: string | null;
   custom_popup_content: string | null;
   enable_consent_screen: boolean | null;
-  auto_scroll: boolean;
 }
 
 export interface CombinedSettings {
@@ -61,4 +76,5 @@ export interface CombinedSettings {
   customAnalyticsScript: string | null;
   isMobile?: boolean;
   webVersion: string | null;
+  webDomain: string | null;
 }

@@ -1,12 +1,13 @@
 import { Persona } from "@/app/admin/assistants/interfaces";
-import { Bubble } from "@/components/Bubble";
 import { AssistantIcon } from "@/components/assistants/AssistantIcon";
 import { useSortable } from "@dnd-kit/sortable";
-import React, { useState } from "react";
-import { FiBookmark, FiImage, FiSearch } from "react-icons/fi";
+import React from "react";
+import { FiImage, FiSearch } from "react-icons/fi";
 import { MdDragIndicator } from "react-icons/md";
 
 import { Badge } from "../ui/badge";
+import { IIMAGE_GENERATION_TOOL_ID } from "@/app/chat/tools/constants";
+import { SEARCH_TOOL_ID } from "@/app/chat/tools/constants";
 
 export const AssistantCard = ({
   assistant,
@@ -19,14 +20,14 @@ export const AssistantCard = ({
 }) => {
   const renderBadgeContent = (tool: { name: string }) => {
     switch (tool.name) {
-      case "SearchTool":
+      case SEARCH_TOOL_ID:
         return (
           <>
             <FiSearch className="h-3 w-3 my-auto" />
             <span>Search</span>
           </>
         );
-      case "ImageGenerationTool":
+      case IIMAGE_GENERATION_TOOL_ID:
         return (
           <>
             <FiImage className="h-3 w-3 my-auto" />
@@ -67,19 +68,6 @@ export const AssistantCard = ({
           </span>
         </div>
       </div>
-
-      {assistant.document_sets.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-2">
-          {assistant.document_sets.map((set) => (
-            <Bubble key={set.id} isSelected={false}>
-              <div className="flex items-center gap-1 text-xs">
-                <FiBookmark className="text-text-500" />
-                {set.name}
-              </div>
-            </Bubble>
-          ))}
-        </div>
-      )}
     </div>
   );
 };

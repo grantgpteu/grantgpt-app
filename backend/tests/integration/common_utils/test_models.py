@@ -1,14 +1,21 @@
+from dataclasses import dataclass
+from datetime import datetime
+from enum import Enum
 from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel
 from pydantic import Field
 
-from danswer.auth.schemas import UserRole
-from danswer.context.search.enums import RecencyBiasSetting
-from danswer.db.enums import AccessType
-from danswer.server.documents.models import DocumentSource
-from danswer.server.documents.models import InputType
+from onyx.auth.schemas import UserRole
+from onyx.configs.constants import QAFeedbackType
+from onyx.context.search.enums import RecencyBiasSetting
+from onyx.context.search.models import SavedSearchDoc
+from onyx.db.enums import AccessType
+from onyx.server.documents.models import DocumentSource
+from onyx.server.documents.models import IndexAttemptSnapshot
+from onyx.server.documents.models import IndexingStatus
+from onyx.server.documents.models import InputType
 
 """
 These data models are used to represent the data on the testing side of things.
@@ -36,12 +43,14 @@ class DATestUser(BaseModel):
     email: str
     password: str
     headers: dict
+    role: UserRole
+    is_active: bool
+    cookies: dict = {}
 
 
-class DATestPersonaCategory(BaseModel):
+class DATestPersonaLabel(BaseModel):
     id: int | None = None
     name: str
-    description: str | None
 
 
 class DATestCredential(BaseModel):
@@ -67,6 +76,7 @@ class DATestConnector(BaseModel):
 class SimpleTestDocument(BaseModel):
     id: str
     content: str
+    image_file_id: str | None = None
 
 
 class DATestCCPair(BaseModel):
@@ -125,14 +135,7 @@ class DATestPersona(BaseModel):
     llm_model_version_override: str | None
     users: list[str]
     groups: list[int]
-    category_id: int | None = None
-
-
-#
-class DATestChatSession(BaseModel):
-    id: UUID
-    persona_id: int
-    description: str
+    label_ids: list[int]
 
 
 class DATestChatMessage(BaseModel):
@@ -142,11 +145,70 @@ class DATestChatMessage(BaseModel):
     message: str
 
 
+class DATestChatSession(BaseModel):
+    id: UUID
+    persona_id: int
+    description: str
+
+
+class DAQueryHistoryEntry(DATestChatSession):
+    feedback_type: QAFeedbackType | None
+
+
 class StreamedResponse(BaseModel):
     full_message: str = ""
     rephrased_query: str | None = None
     tool_name: str | None = None
-    top_documents: list[dict[str, Any]] | None = None
+    top_documents: list[SavedSearchDoc] | None = None
     relevance_summaries: list[dict[str, Any]] | None = None
     tool_result: Any | None = None
     user: str | None = None
+
+
+class DATestGatingType(str, Enum):
+    FULL = "full"
+    PARTIAL = "partial"
+    NONE = "none"
+
+
+class DATestSettings(BaseModel):
+    """General settings"""
+
+    # is float to allow for fractional days for easier automated testing
+    maximum_chat_retention_days: float | None = None
+    gpu_enabled: bool | None = None
+    product_gating: DATestGatingType = DATestGatingType.NONE
+    anonymous_user_enabled: bool | None = None
+    image_extraction_and_analysis_enabled: bool | None = False
+    search_time_image_analysis_enabled: bool | None = False
+
+
+@dataclass
+class DATestIndexAttempt:
+    id: int
+    status: IndexingStatus | None
+    new_docs_indexed: int | None
+    total_docs_indexed: int | None
+    docs_removed_from_index: int | None
+    error_msg: str | None
+    time_started: datetime | None
+    time_updated: datetime | None
+
+    @classmethod
+    def from_index_attempt_snapshot(
+        cls, index_attempt: IndexAttemptSnapshot
+    ) -> "DATestIndexAttempt":
+        return cls(
+            id=index_attempt.id,
+            status=index_attempt.status,
+            new_docs_indexed=index_attempt.new_docs_indexed,
+            total_docs_indexed=index_attempt.total_docs_indexed,
+            docs_removed_from_index=index_attempt.docs_removed_from_index,
+            error_msg=index_attempt.error_msg,
+            time_started=(
+                datetime.fromisoformat(index_attempt.time_started)
+                if index_attempt.time_started
+                else None
+            ),
+            time_updated=datetime.fromisoformat(index_attempt.time_updated),
+        )

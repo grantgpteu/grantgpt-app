@@ -11,9 +11,8 @@ import {
   User,
   ValidSources,
 } from "@/lib/types";
-import { ChatSession } from "@/app/chat/interfaces";
+import { ChatSession, InputPrompt } from "@/app/chat/interfaces";
 import { Persona } from "@/app/admin/assistants/interfaces";
-import { InputPrompt } from "@/app/admin/prompt-library/interfaces";
 import { FullEmbeddingModelResponse } from "@/components/embedding/interfaces";
 import { Settings } from "@/app/admin/settings/interfaces";
 import { fetchLLMProvidersSS } from "@/lib/llm/fetchLLMs";
@@ -23,10 +22,13 @@ import { cookies, headers } from "next/headers";
 import {
   SIDEBAR_TOGGLED_COOKIE_NAME,
   DOCUMENT_SIDEBAR_WIDTH_COOKIE_NAME,
+  PRO_SEARCH_TOGGLED_COOKIE_NAME,
 } from "@/components/resizable/constants";
 import { hasCompletedWelcomeFlowSS } from "@/components/initialSetup/welcome/WelcomeModalWrapper";
-import { NEXT_PUBLIC_DEFAULT_SIDEBAR_OPEN } from "../constants";
-import { redirect } from "next/navigation";
+import {
+  NEXT_PUBLIC_DEFAULT_SIDEBAR_OPEN,
+  NEXT_PUBLIC_ENABLE_CHROME_EXTENSION,
+} from "../constants";
 
 interface FetchChatDataResult {
   user: User | null;
@@ -39,10 +41,11 @@ interface FetchChatDataResult {
   folders: Folder[];
   openedFolders: Record<string, boolean>;
   defaultAssistantId?: number;
-  toggleSidebar: boolean;
+  sidebarInitiallyVisible: boolean;
   finalDocumentSidebarInitialWidth?: number;
   shouldShowWelcomeModal: boolean;
-  userInputPrompts: InputPrompt[];
+  inputPrompts: InputPrompt[];
+  proSearchToggled: boolean;
 }
 
 export async function fetchChatData(searchParams: {
@@ -70,6 +73,7 @@ export async function fetchChatData(searchParams: {
     | LLMProviderDescriptor[]
     | [Persona[], string | null]
     | null
+    | InputPrompt[]
   )[] = [null, null, null, null, null, null, null, null, null];
   try {
     results = await Promise.all(tasks);
@@ -87,9 +91,17 @@ export async function fetchChatData(searchParams: {
   const tagsResponse = results[5] as Response | null;
   const llmProviders = (results[6] || []) as LLMProviderDescriptor[];
   const foldersResponse = results[7] as Response | null;
-  const userInputPromptsResponse = results[8] as Response | null;
+
+  let inputPrompts: InputPrompt[] = [];
+  if (results[8] instanceof Response && results[8].ok) {
+    inputPrompts = await results[8].json();
+  } else {
+    console.log("Failed to fetch input prompts");
+  }
 
   const authDisabled = authTypeMetadata?.authType === "disabled";
+
+  // TODO Validate need
   if (!authDisabled && !user) {
     const headersList = await headers();
     const fullUrl = headersList.get("x-url") || "/chat";
@@ -99,7 +111,29 @@ export async function fetchChatData(searchParams: {
     const redirectUrl = searchParamsString
       ? `${fullUrl}?${searchParamsString}`
       : fullUrl;
-    return redirect(`/auth/login?next=${encodeURIComponent(redirectUrl)}`);
+
+    // Check the referrer to prevent redirect loops
+    const referrer = headersList.get("referer") || "";
+    const isComingFromLogin = referrer.includes("/auth/login");
+
+    // Also check for the from=login query parameter
+    const isRedirectedFromLogin = searchParams["from"] === "login";
+
+    console.log(
+      `Auth check: authDisabled=${authDisabled}, user=${!!user}, referrer=${referrer}, fromLogin=${isRedirectedFromLogin}`
+    );
+
+    // Only redirect if we're not already coming from the login page
+    if (
+      !NEXT_PUBLIC_ENABLE_CHROME_EXTENSION &&
+      !isComingFromLogin &&
+      !isRedirectedFromLogin
+    ) {
+      console.log("Redirecting to login from chat page");
+      return {
+        redirect: `/auth/login?next=${encodeURIComponent(redirectUrl)}`,
+      };
+    }
   }
 
   if (user && !user.is_verified && authTypeMetadata?.requiresVerification) {
@@ -130,7 +164,7 @@ export async function fetchChatData(searchParams: {
 
   chatSessions.sort(
     (a, b) =>
-      new Date(b.time_created).getTime() - new Date(a.time_created).getTime()
+      new Date(b.time_updated).getTime() - new Date(a.time_updated).getTime()
   );
 
   let documentSets: DocumentSet[] = [];
@@ -139,15 +173,6 @@ export async function fetchChatData(searchParams: {
   } else {
     console.log(
       `Failed to fetch document sets - ${documentSetsResponse?.status}`
-    );
-  }
-
-  let userInputPrompts: InputPrompt[] = [];
-  if (userInputPromptsResponse?.ok) {
-    userInputPrompts = await userInputPromptsResponse.json();
-  } else {
-    console.log(
-      `Failed to fetch user input prompts - ${userInputPromptsResponse?.status}`
     );
   }
 
@@ -168,7 +193,18 @@ export async function fetchChatData(searchParams: {
   );
   const sidebarToggled = requestCookies.get(SIDEBAR_TOGGLED_COOKIE_NAME);
 
-  const toggleSidebar = sidebarToggled
+  const proSearchToggled =
+    requestCookies.get(PRO_SEARCH_TOGGLED_COOKIE_NAME)?.value.toLowerCase() ===
+    "true";
+
+  // IF user is an anoymous user, we don't want to show the sidebar (they have no access to chat history)
+  const sidebarInitiallyVisible =
+    !user?.is_anonymous_user &&
+    (sidebarToggled
+      ? sidebarToggled.value.toLocaleLowerCase() == "true" || false
+      : NEXT_PUBLIC_DEFAULT_SIDEBAR_OPEN);
+
+  sidebarToggled
     ? sidebarToggled.value.toLocaleLowerCase() == "true" || false
     : NEXT_PUBLIC_DEFAULT_SIDEBAR_OPEN;
 
@@ -210,8 +246,9 @@ export async function fetchChatData(searchParams: {
     openedFolders,
     defaultAssistantId,
     finalDocumentSidebarInitialWidth,
-    toggleSidebar,
+    sidebarInitiallyVisible,
     shouldShowWelcomeModal,
-    userInputPrompts,
+    inputPrompts,
+    proSearchToggled,
   };
 }

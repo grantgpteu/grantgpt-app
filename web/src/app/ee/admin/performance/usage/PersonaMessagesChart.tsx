@@ -6,7 +6,7 @@ import {
   usePersonaUniqueUsers,
 } from "../lib";
 import { useAssistants } from "@/components/context/AssistantsContext";
-import { DateRangePickerValue } from "@/app/ee/admin/performance/DateRangeSelector";
+import { DateRangePickerValue } from "@/components/dateRangeSelectors/AdminDateRangeSelector";
 import Text from "@/components/ui/text";
 import Title from "@/components/ui/title";
 import CardSection from "@/components/admin/CardSection";
@@ -73,9 +73,12 @@ export function PersonaMessagesChart({
           highlightedIndex >= 0 &&
           highlightedIndex < filteredPersonaList.length
         ) {
-          setSelectedPersonaId(filteredPersonaList[highlightedIndex].id);
-          setSearchQuery("");
-          setHighlightedIndex(-1);
+          const filteredPersona = filteredPersonaList[highlightedIndex];
+          if (filteredPersona !== undefined) {
+            setSelectedPersonaId(filteredPersona.id);
+            setSearchQuery("");
+            setHighlightedIndex(-1);
+          }
         }
         break;
       case "Escape":
@@ -147,15 +150,15 @@ export function PersonaMessagesChart({
     );
   } else if (selectedPersonaId === undefined) {
     content = (
-      <div className="h-80 text-gray-500 flex flex-col">
-        <p className="m-auto">Select a persona to view analytics</p>
+      <div className="h-80 text-text-500 flex flex-col">
+        <p className="m-auto">Select an assistant to view analytics</p>
       </div>
     );
   } else if (!personaMessagesData?.length) {
     content = (
-      <div className="h-80 text-gray-500 flex flex-col">
+      <div className="h-80 text-text-500 flex flex-col">
         <p className="m-auto">
-          No data found for selected persona in the selected time range
+          No data found for selected assistant in the specified time range
         </p>
       </div>
     );
@@ -172,13 +175,13 @@ export function PersonaMessagesChart({
     );
   }
 
-  const selectedPersona = personaList?.find((p) => p.id === selectedPersonaId);
-
   return (
     <CardSection className="mt-8">
-      <Title>Persona Analytics</Title>
+      <Title>Assistant Analytics</Title>
       <div className="flex flex-col gap-4">
-        <Text>Messages and unique users per day for selected persona</Text>
+        <Text>
+          Messages and unique users per day for the selected assistant
+        </Text>
         <div className="flex items-center gap-4">
           <Select
             value={selectedPersonaId?.toString() ?? ""}
@@ -187,14 +190,14 @@ export function PersonaMessagesChart({
             }}
           >
             <SelectTrigger className="flex w-full max-w-xs">
-              <SelectValue placeholder="Select a persona to display" />
+              <SelectValue placeholder="Select an assistant to display" />
             </SelectTrigger>
             <SelectContent>
               <div className="flex items-center px-2 pb-2 sticky top-0 bg-background border-b">
                 <Search className="h-4 w-4 mr-2 shrink-0 opacity-50" />
                 <input
                   className="flex h-8 w-full rounded-sm bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                  placeholder="Search personas..."
+                  placeholder="Search assistants..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onClick={(e) => e.stopPropagation()}

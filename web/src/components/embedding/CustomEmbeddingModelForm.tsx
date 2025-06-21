@@ -1,7 +1,7 @@
 import { CloudEmbeddingModel, EmbeddingProvider } from "./interfaces";
 import { Formik, Form } from "formik";
 import * as Yup from "yup";
-import { TextFormField, BooleanFormField } from "../admin/connectors/Field";
+import { TextFormField, BooleanFormField } from "@/components/Field";
 import { Dispatch, SetStateAction } from "react";
 import Text from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -102,7 +102,6 @@ export function CustomEmbeddingModelForm({
 
             <Button
               type="submit"
-              onClick={() => console.log(errors)}
               disabled={isSubmitting}
               className="w-64 mx-auto"
             >

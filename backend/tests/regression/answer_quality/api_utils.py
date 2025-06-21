@@ -1,16 +1,16 @@
 import requests
 from retry import retry
 
-from danswer.chat.models import ThreadMessage
-from danswer.configs.constants import DocumentSource
-from danswer.configs.constants import MessageType
-from danswer.connectors.models import InputType
-from danswer.context.search.enums import OptionalSearchSetting
-from danswer.context.search.models import IndexFilters
-from danswer.context.search.models import RetrievalDetails
-from danswer.db.enums import IndexingStatus
-from danswer.server.documents.models import ConnectorBase
-from ee.danswer.server.query_and_chat.models import OneShotQARequest
+from ee.onyx.server.query_and_chat.models import OneShotQARequest
+from onyx.chat.models import ThreadMessage
+from onyx.configs.constants import DocumentSource
+from onyx.configs.constants import MessageType
+from onyx.connectors.models import InputType
+from onyx.context.search.enums import OptionalSearchSetting
+from onyx.context.search.models import IndexFilters
+from onyx.context.search.models import RetrievalDetails
+from onyx.db.enums import IndexingStatus
+from onyx.server.documents.models import ConnectorBase
 from tests.regression.answer_quality.cli_utils import get_api_server_host_port
 
 GENERAL_HEADERS = {"Content-Type": "application/json"}
@@ -160,7 +160,7 @@ def create_connector(env_name: str, file_paths: list[str]) -> int:
         name=connector_name,
         source=DocumentSource.FILE,
         input_type=InputType.LOAD_STATE,
-        connector_specific_config={"file_locations": file_paths},
+        connector_specific_config={"file_locations": file_paths, "zip_metadata": {}},
         refresh_freq=None,
         prune_freq=None,
         indexing_start=None,

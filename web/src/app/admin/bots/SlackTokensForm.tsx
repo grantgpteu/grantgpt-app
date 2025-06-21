@@ -1,6 +1,6 @@
 "use client";
 
-import { TextFormField } from "@/components/admin/connectors/Field";
+import { TextFormField } from "@/components/Field";
 import { Form, Formik } from "formik";
 import * as Yup from "yup";
 import { createSlackBot, updateSlackBot } from "./new/lib";
@@ -29,11 +29,13 @@ export const SlackTokensForm = ({
     if (onValuesChange) {
       onValuesChange(initialValues);
     }
-  }, [initialValues]);
+  }, [initialValues, onValuesChange]);
 
   return (
     <Formik
-      initialValues={initialValues}
+      initialValues={{
+        ...initialValues,
+      }}
       validationSchema={Yup.object().shape({
         bot_token: Yup.string().required(),
         app_token: Yup.string().required(),
@@ -64,7 +66,13 @@ export const SlackTokensForm = ({
           router.push(`/admin/bots/${encodeURIComponent(botId)}`);
         } else {
           const responseJson = await response.json();
-          const errorMsg = responseJson.detail || responseJson.message;
+          let errorMsg = responseJson.detail || responseJson.message;
+
+          if (errorMsg.includes("Invalid bot token:")) {
+            errorMsg = "Slack Bot Token is invalid";
+          } else if (errorMsg.includes("Invalid app token:")) {
+            errorMsg = "Slack App Token is invalid";
+          }
           setPopup({
             message: isUpdate
               ? `Error updating Slack Bot - ${errorMsg}`
@@ -93,7 +101,7 @@ export const SlackTokensForm = ({
               Please refer to our{" "}
               <a
                 className="text-blue-500 hover:underline"
-                href="https://docs.danswer.dev/slack_bot_setup"
+                href="https://docs.onyx.app/slack_bot_setup"
                 target="_blank"
                 rel="noopener noreferrer"
               >

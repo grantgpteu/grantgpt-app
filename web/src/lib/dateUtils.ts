@@ -1,4 +1,23 @@
-import { DateRangePickerValue } from "@/app/ee/admin/performance/DateRangeSelector";
+import { useEffect } from "react";
+import { useState } from "react";
+
+export const useNightTime = () => {
+  const [isNight, setIsNight] = useState(false);
+
+  useEffect(() => {
+    const checkNightTime = () => {
+      const currentHour = new Date().getHours();
+      setIsNight(currentHour >= 18 || currentHour < 6);
+    };
+
+    checkNightTime();
+    const interval = setInterval(checkNightTime, 60000); // Check every minute
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return { isNight };
+};
 
 export function getXDaysAgo(daysAgo: number) {
   const today = new Date();
@@ -57,6 +76,23 @@ export const buildDateString = (date: Date | null) => {
     : "Select a time range";
 };
 
+export const getFormattedDateRangeString = (
+  from: Date | null,
+  to: Date | null
+) => {
+  if (!from || !to) return null;
+
+  const options: Intl.DateTimeFormatOptions = {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  };
+  const fromString = from.toLocaleDateString("en-US", options);
+  const toString = to.toLocaleDateString("en-US", options);
+
+  return `${fromString} - ${toString}`;
+};
+
 export const getDateRangeString = (from: Date | null, to: Date | null) => {
   if (!from || !to) return null;
 
@@ -82,14 +118,38 @@ export const getDateRangeString = (from: Date | null, to: Date | null) => {
 export const getTimeAgoString = (date: Date | null) => {
   if (!date) return null;
 
-  const diffMs = new Date().getTime() - date.getTime();
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
   const diffWeeks = Math.floor(diffDays / 7);
   const diffMonths = Math.floor(diffDays / 30);
 
-  if (buildDateString(date).includes("Today")) return "Today";
+  if (now.toDateString() === date.toDateString()) return "Today";
   if (diffDays === 1) return "Yesterday";
   if (diffDays < 7) return `${diffDays}d ago`;
   if (diffDays < 30) return `${diffWeeks}w ago`;
   return `${diffMonths}mo ago`;
+};
+
+export const getFormattedDateTime = (date: Date | null) => {
+  if (!date) return null;
+
+  const now = new Date();
+  const isToday = now.toDateString() === date.toDateString();
+
+  if (isToday) {
+    // If it's today, return the time in format like "3:45 PM"
+    return date.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  } else {
+    // Otherwise return the date in format like "Jan 15, 2023"
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  }
 };

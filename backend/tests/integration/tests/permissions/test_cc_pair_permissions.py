@@ -2,11 +2,14 @@
 This file takes the happy path to adding a curator to a user group and then tests
 the permissions of the curator manipulating connector-credential pairs.
 """
+
+import os
+
 import pytest
 from requests.exceptions import HTTPError
 
-from danswer.db.enums import AccessType
-from danswer.server.documents.models import DocumentSource
+from onyx.db.enums import AccessType
+from onyx.server.documents.models import DocumentSource
 from tests.integration.common_utils.managers.cc_pair import CCPairManager
 from tests.integration.common_utils.managers.connector import ConnectorManager
 from tests.integration.common_utils.managers.credential import CredentialManager
@@ -15,6 +18,10 @@ from tests.integration.common_utils.managers.user import UserManager
 from tests.integration.common_utils.managers.user_group import UserGroupManager
 
 
+@pytest.mark.skipif(
+    os.environ.get("ENABLE_PAID_ENTERPRISE_EDITION_FEATURES", "").lower() != "true",
+    reason="Curator and User Group tests are enterprise only",
+)
 def test_cc_pair_permissions(reset: None) -> None:
     # Creating an admin user (first user created is automatically an admin)
     admin_user: DATestUser = UserManager.create(name="admin_user")

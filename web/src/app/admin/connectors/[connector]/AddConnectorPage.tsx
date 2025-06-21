@@ -2,7 +2,6 @@
 
 import { errorHandlingFetcher } from "@/lib/fetcher";
 import useSWR, { mutate } from "swr";
-import { HealthCheckBanner } from "@/components/health/healthcheck";
 
 import Title from "@/components/ui/title";
 import { AdminPageTitle } from "@/components/admin/Title";
@@ -11,7 +10,7 @@ import { usePopup } from "@/components/admin/connectors/Popup";
 import { useFormContext } from "@/components/context/FormContext";
 import { getSourceDisplayName, getSourceMetadata } from "@/lib/sources";
 import { SourceIcon } from "@/components/SourceIcon";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { deleteCredential, linkCredential } from "@/lib/credential";
 import { submitFiles } from "./pages/utils/files";
 import { submitGoogleSite } from "./pages/utils/google_site";
@@ -19,7 +18,11 @@ import AdvancedFormPage from "./pages/Advanced";
 import DynamicConnectionForm from "./pages/DynamicConnectorCreationForm";
 import CreateCredential from "@/components/credentials/actions/CreateCredential";
 import ModifyCredential from "@/components/credentials/actions/ModifyCredential";
-import { ConfigurableSources, ValidSources } from "@/lib/types";
+import {
+  ConfigurableSources,
+  oauthSupportedSources,
+  ValidSources,
+} from "@/lib/types";
 import { Credential, credentialTemplates } from "@/lib/connectors/credentials";
 import {
   ConnectionConfiguration,
@@ -33,7 +36,6 @@ import {
   ConnectorBase,
 } from "@/lib/connectors/connectors";
 import { Modal } from "@/components/Modal";
-import GDriveMain from "./pages/gdrive/GoogleDrivePage";
 import { GmailMain } from "./pages/gmail/GmailPage";
 import {
   useGmailCredentials,
@@ -44,7 +46,20 @@ import NavigationRow from "./NavigationRow";
 import { useRouter } from "next/navigation";
 import CardSection from "@/components/admin/CardSection";
 import { prepareOAuthAuthorizationRequest } from "@/lib/oauth_utils";
-import { EE_ENABLED, NEXT_PUBLIC_CLOUD_ENABLED } from "@/lib/constants";
+import {
+  EE_ENABLED,
+  NEXT_PUBLIC_CLOUD_ENABLED,
+  NEXT_PUBLIC_TEST_ENV,
+} from "@/lib/constants";
+import {
+  getConnectorOauthRedirectUrl,
+  useOAuthDetails,
+} from "@/lib/connectors/oauth";
+import { CreateStdOAuthCredential } from "@/components/credentials/actions/CreateStdOAuthCredential";
+import { Spinner } from "@/components/Spinner";
+import { Button } from "@/components/ui/button";
+import { deleteConnector } from "@/lib/connector";
+
 export interface AdvancedConfig {
   refreshFreq: number;
   pruneFreq: number;
@@ -52,6 +67,7 @@ export interface AdvancedConfig {
 }
 
 const BASE_CONNECTOR_URL = "/api/manage/admin/connector";
+const CONNECTOR_CREATION_TIMEOUT_MS = 10000; // ~10 seconds is reasonable for longer connector validation
 
 export async function submitConnector<T>(
   connector: ConnectorBase<T>,
@@ -121,7 +137,7 @@ export default function AddConnector({
       setCurrentPageUrl(window.location.href);
     }
 
-    if (EE_ENABLED && NEXT_PUBLIC_CLOUD_ENABLED) {
+    if (EE_ENABLED && (NEXT_PUBLIC_CLOUD_ENABLED || NEXT_PUBLIC_TEST_ENV)) {
       const sourceMetadata = getSourceMetadata(connector);
       if (sourceMetadata?.oauthSupported == true) {
         setIsAuthorizeVisible(true);
@@ -134,7 +150,8 @@ export default function AddConnector({
   // State for managing credentials and files
   const [currentCredential, setCurrentCredential] =
     useState<Credential<any> | null>(null);
-  const [createConnectorToggle, setCreateConnectorToggle] = useState(false);
+  const [createCredentialFormToggle, setCreateCredentialFormToggle] =
+    useState(false);
 
   // Fetch credentials data
   const { data: credentials } = useSWR<Credential<any>[]>(
@@ -149,19 +166,30 @@ export default function AddConnector({
     { refreshInterval: 5000 }
   );
 
+  const { data: oauthDetails, isLoading: oauthDetailsLoading } =
+    useOAuthDetails(connector);
+
   // Get credential template and configuration
   const credentialTemplate = credentialTemplates[connector];
   const configuration: ConnectionConfiguration = connectorConfigs[connector];
 
   // Form context and popup management
-  const {
-    setFormStep,
-    setAllowCreate: setAllowCreate,
-    formStep,
-    nextFormStep,
-    prevFormStep,
-  } = useFormContext();
+  const { setFormStep, setAllowCreate, formStep } = useFormContext();
   const { popup, setPopup } = usePopup();
+  const [uploading, setUploading] = useState(false);
+  const [creatingConnector, setCreatingConnector] = useState(false);
+
+  // Connector creation timeout management
+  const timeoutErrorHappenedRef = useRef<boolean>(false);
+  const connectorIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      // Cleanup refs when component unmounts
+      timeoutErrorHappenedRef.current = false;
+      connectorIdRef.current = null;
+    };
+  }, []);
 
   // Hooks for Google Drive and Gmail credentials
   const { liveGDriveCredential } = useGoogleDriveCredentials(connector);
@@ -176,13 +204,15 @@ export default function AddConnector({
   // Check if there are no credentials
   const noCredentials = credentialTemplate == null;
 
-  if (noCredentials && 1 != formStep) {
-    setFormStep(Math.max(1, formStep));
-  }
+  useEffect(() => {
+    if (noCredentials && 1 != formStep) {
+      setFormStep(Math.max(1, formStep));
+    }
 
-  if (!noCredentials && !credentialActivated && formStep != 0) {
-    setFormStep(Math.min(formStep, 0));
-  }
+    if (!noCredentials && !credentialActivated && formStep != 0) {
+      setFormStep(Math.min(formStep, 0));
+    }
+  }, [noCredentials, formStep, setFormStep]);
 
   const convertStringToDateTime = (indexingStart: string | null) => {
     return indexingStart ? new Date(indexingStart) : null;
@@ -262,7 +292,7 @@ export default function AddConnector({
   return (
     <Formik
       initialValues={{
-        ...createConnectorInitialValues(connector),
+        ...createConnectorInitialValues(connector, currentCredential),
         ...Object.fromEntries(
           connectorConfigs[connector].advanced_values.map((field) => [
             field.name,
@@ -283,11 +313,17 @@ export default function AddConnector({
           ...connector_specific_config
         } = values;
 
-        // Apply transforms from connectors.ts configuration
+        // Apply special transforms according to application logic
         const transformedConnectorSpecificConfig = Object.entries(
           connector_specific_config
         ).reduce(
           (acc, [key, value]) => {
+            // Filter out empty strings from arrays
+            if (Array.isArray(value)) {
+              value = (value as any[]).filter(
+                (item) => typeof item !== "string" || item.trim() !== ""
+              );
+            }
             const matchingConfigValue = configuration.values.find(
               (configValue) => configValue.name === key
             );
@@ -339,80 +375,137 @@ export default function AddConnector({
         }
         // File-specific handling
         if (connector == "file") {
-          const response = await submitFiles(
-            selectedFiles,
-            setPopup,
-            name,
-            access_type,
-            groups
-          );
-          if (response) {
-            onSuccess();
+          setUploading(true);
+          try {
+            const response = await submitFiles(
+              selectedFiles,
+              setPopup,
+              name,
+              access_type,
+              groups
+            );
+            if (response) {
+              onSuccess();
+            }
+          } catch (error) {
+            setPopup({ message: "Error uploading files", type: "error" });
+          } finally {
+            setUploading(false);
           }
+
           return;
         }
 
-        const { message, isSuccess, response } = await submitConnector<any>(
-          {
-            connector_specific_config: transformedConnectorSpecificConfig,
-            input_type: isLoadState(connector) ? "load_state" : "poll", // single case
-            name: name,
-            source: connector,
-            access_type: access_type,
-            refresh_freq: advancedConfiguration.refreshFreq || null,
-            prune_freq: advancedConfiguration.pruneFreq || null,
-            indexing_start: advancedConfiguration.indexingStart || null,
-            groups: groups,
-          },
-          undefined,
-          credentialActivated ? false : true
-        );
-        // If no credential
-        if (!credentialActivated) {
-          if (isSuccess) {
-            onSuccess();
-          } else {
-            setPopup({ message: message, type: "error" });
-          }
-        }
-
-        // Without credential
-        if (credentialActivated && isSuccess && response) {
-          const credential =
-            currentCredential || liveGDriveCredential || liveGmailCredential;
-          const linkCredentialResponse = await linkCredential(
-            response.id,
-            credential?.id!,
-            name,
-            access_type,
-            groups,
-            auto_sync_options
+        setCreatingConnector(true);
+        try {
+          const timeoutPromise = new Promise<{ isTimeout: true }>((resolve) =>
+            setTimeout(
+              () => resolve({ isTimeout: true }),
+              CONNECTOR_CREATION_TIMEOUT_MS
+            )
           );
-          if (linkCredentialResponse.ok) {
-            onSuccess();
-          } else {
-            const errorData = await linkCredentialResponse.json();
+
+          const connectorCreationPromise = (async () => {
+            const { message, isSuccess, response } = await submitConnector<any>(
+              {
+                connector_specific_config: transformedConnectorSpecificConfig,
+                input_type: isLoadState(connector) ? "load_state" : "poll", // single case
+                name: name,
+                source: connector,
+                access_type: access_type,
+                refresh_freq: advancedConfiguration.refreshFreq || null,
+                prune_freq: advancedConfiguration.pruneFreq || null,
+                indexing_start: advancedConfiguration.indexingStart || null,
+                groups: groups,
+              },
+              undefined,
+              credentialActivated ? false : true
+            );
+
+            // Store the connector id immediately for potential timeout
+            if (response?.id) {
+              connectorIdRef.current = response.id;
+            }
+
+            // If no credential
+            if (!credentialActivated) {
+              if (isSuccess) {
+                onSuccess();
+              } else {
+                setPopup({ message: message, type: "error" });
+              }
+            }
+
+            // With credential
+            if (credentialActivated && isSuccess && response) {
+              const credential =
+                currentCredential ||
+                liveGDriveCredential ||
+                liveGmailCredential;
+              const linkCredentialResponse = await linkCredential(
+                response.id,
+                credential?.id!,
+                name,
+                access_type,
+                groups,
+                auto_sync_options
+              );
+              if (linkCredentialResponse.ok) {
+                onSuccess();
+              } else {
+                const errorData = await linkCredentialResponse.json();
+
+                if (!timeoutErrorHappenedRef.current) {
+                  // Only show error if timeout didn't happen
+                  setPopup({
+                    message: errorData.message || errorData.detail,
+                    type: "error",
+                  });
+                }
+              }
+            } else if (isSuccess) {
+              onSuccess();
+            } else {
+              setPopup({ message: message, type: "error" });
+            }
+
+            timeoutErrorHappenedRef.current = false;
+            return;
+          })();
+
+          const result = (await Promise.race([
+            connectorCreationPromise,
+            timeoutPromise,
+          ])) as {
+            isTimeout?: true;
+          };
+
+          if (result.isTimeout) {
+            timeoutErrorHappenedRef.current = true;
             setPopup({
-              message: errorData.message,
+              message: `Operation timed out after ${CONNECTOR_CREATION_TIMEOUT_MS / 1000} seconds. Check your configuration for errors?`,
               type: "error",
             });
+
+            if (connectorIdRef.current) {
+              await deleteConnector(connectorIdRef.current);
+              connectorIdRef.current = null;
+            }
           }
-        } else if (isSuccess) {
-          onSuccess();
-        } else {
-          setPopup({ message: message, type: "error" });
+          return;
+        } finally {
+          setCreatingConnector(false);
         }
-        return;
       }}
     >
       {(formikProps) => {
         return (
-          <div className="mx-auto mb-8 w-full">
+          <div className="mx-auto w-full">
             {popup}
 
-            <div className="mb-4">
-              <HealthCheckBanner />
-            </div>
+            {uploading && <Spinner />}
+
+            {creatingConnector && <Spinner />}
 
             <AdminPageTitle
               includeDivider={false}
@@ -424,9 +517,7 @@ export default function AddConnector({
               <CardSection>
                 <Title className="mb-2 text-lg">Select a credential</Title>
 
-                {connector == "google_drive" ? (
-                  <GDriveMain />
-                ) : connector == "gmail" ? (
+                {connector == ValidSources.Gmail ? (
                   <GmailMain />
                 ) : (
                   <>
@@ -439,58 +530,101 @@ export default function AddConnector({
                       onDeleteCredential={onDeleteCredential}
                       onSwitch={onSwap}
                     />
-                    {!createConnectorToggle && (
+                    {!createCredentialFormToggle && (
                       <div className="mt-6 flex space-x-4">
                         {/* Button to pop up a form to manually enter credentials */}
-                        <button
-                          className="mt-6 text-sm bg-background-900 px-2 py-1.5 flex text-text-200 flex-none rounded mr-4"
-                          onClick={() =>
-                            setCreateConnectorToggle(
-                              (createConnectorToggle) => !createConnectorToggle
-                            )
-                          }
+                        <Button
+                          variant="secondary"
+                          className="mt-6 text-sm mr-4"
+                          onClick={async () => {
+                            if (oauthDetails && oauthDetails.oauth_enabled) {
+                              if (oauthDetails.additional_kwargs.length > 0) {
+                                setCreateCredentialFormToggle(true);
+                              } else {
+                                const redirectUrl =
+                                  await getConnectorOauthRedirectUrl(
+                                    connector,
+                                    {}
+                                  );
+                                // if redirect is supported, just use it
+                                if (redirectUrl) {
+                                  window.location.href = redirectUrl;
+                                } else {
+                                  setCreateCredentialFormToggle(
+                                    (createConnectorToggle) =>
+                                      !createConnectorToggle
+                                  );
+                                }
+                              }
+                            } else {
+                              setCreateCredentialFormToggle(
+                                (createConnectorToggle) =>
+                                  !createConnectorToggle
+                              );
+                            }
+                          }}
                         >
                           Create New
-                        </button>
-
+                        </Button>
                         {/* Button to sign in via OAuth */}
-                        <button
-                          onClick={handleAuthorize}
-                          className="mt-6 text-sm bg-blue-500 px-2 py-1.5 flex text-text-200 flex-none rounded"
-                          disabled={isAuthorizing}
-                          hidden={!isAuthorizeVisible}
-                        >
-                          {isAuthorizing
-                            ? "Authorizing..."
-                            : `Authorize with ${getSourceDisplayName(connector)}`}
-                        </button>
+                        {oauthSupportedSources.includes(connector) &&
+                          (NEXT_PUBLIC_CLOUD_ENABLED ||
+                            NEXT_PUBLIC_TEST_ENV) && (
+                            <Button
+                              variant="navigate"
+                              onClick={handleAuthorize}
+                              className="mt-6 "
+                              disabled={isAuthorizing}
+                              hidden={!isAuthorizeVisible}
+                            >
+                              {isAuthorizing
+                                ? "Authorizing..."
+                                : `Authorize with ${getSourceDisplayName(
+                                    connector
+                                  )}`}
+                            </Button>
+                          )}
                       </div>
                     )}
 
-                    {/* NOTE: connector will never be google_drive, since the ternary above will 
-                    prevent that, but still keeping this here for safety in case the above changes. */}
-                    {(connector as ValidSources) !== "google_drive" &&
-                      createConnectorToggle && (
-                        <Modal
-                          className="max-w-3xl rounded-lg"
-                          onOutsideClick={() => setCreateConnectorToggle(false)}
-                        >
+                    {createCredentialFormToggle && (
+                      <Modal
+                        className="max-w-3xl rounded-lg"
+                        onOutsideClick={() =>
+                          setCreateCredentialFormToggle(false)
+                        }
+                      >
+                        {oauthDetailsLoading ? (
+                          <Spinner />
+                        ) : (
                           <>
                             <Title className="mb-2 text-lg">
                               Create a {getSourceDisplayName(connector)}{" "}
                               credential
                             </Title>
-                            <CreateCredential
-                              close
-                              refresh={refresh}
-                              sourceType={connector}
-                              setPopup={setPopup}
-                              onSwitch={onSwap}
-                              onClose={() => setCreateConnectorToggle(false)}
-                            />
+                            {oauthDetails && oauthDetails.oauth_enabled ? (
+                              <CreateStdOAuthCredential
+                                sourceType={connector}
+                                additionalFields={
+                                  oauthDetails.additional_kwargs
+                                }
+                              />
+                            ) : (
+                              <CreateCredential
+                                close
+                                refresh={refresh}
+                                sourceType={connector}
+                                setPopup={setPopup}
+                                onSwitch={onSwap}
+                                onClose={() =>
+                                  setCreateCredentialFormToggle(false)
+                                }
+                              />
+                            )}
                           </>
-                        </Modal>
-                      )}
+                        )}
+                      </Modal>
+                    )}
                   </>
                 )}
               </CardSection>

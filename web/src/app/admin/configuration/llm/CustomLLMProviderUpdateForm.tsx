@@ -13,19 +13,16 @@ import {
 } from "formik";
 import { FiPlus, FiTrash, FiX } from "react-icons/fi";
 import { LLM_PROVIDERS_ADMIN_URL } from "./constants";
-import {
-  Label,
-  SubLabel,
-  TextArrayField,
-  TextFormField,
-} from "@/components/admin/connectors/Field";
+import { Label, SubLabel, TextFormField } from "@/components/Field";
 import { useState } from "react";
 import { useSWRConfig } from "swr";
-import { FullLLMProvider } from "./interfaces";
+import { LLMProviderView } from "./interfaces";
 import { PopupSpec } from "@/components/admin/connectors/Popup";
 import * as Yup from "yup";
 import isEqual from "lodash/isEqual";
 import { IsPublicGroupSelector } from "@/components/IsPublicGroupSelector";
+import { usePaidEnterpriseFeaturesEnabled } from "@/components/settings/usePaidEnterpriseFeaturesEnabled";
+import { ModelConfigurationField } from "./ModelConfigurationField";
 
 function customConfigProcessing(customConfigsList: [string, string][]) {
   const customConfig: { [key: string]: string } = {};
@@ -43,7 +40,7 @@ export function CustomLLMProviderUpdateForm({
   hideSuccess,
 }: {
   onClose: () => void;
-  existingLlmProvider?: FullLLMProvider;
+  existingLlmProvider?: LLMProviderView;
   shouldMarkAsDefault?: boolean;
   setPopup?: (popup: PopupSpec) => void;
   hideSuccess?: boolean;
@@ -65,13 +62,19 @@ export function CustomLLMProviderUpdateForm({
     default_model_name: existingLlmProvider?.default_model_name ?? null,
     fast_default_model_name:
       existingLlmProvider?.fast_default_model_name ?? null,
-    model_names: existingLlmProvider?.model_names ?? [],
+    model_configurations: existingLlmProvider?.model_configurations.map(
+      (modelConfiguration) => ({
+        ...modelConfiguration,
+        max_input_tokens: modelConfiguration.max_input_tokens ?? null,
+      })
+    ) ?? [{ name: "", is_visible: true, max_input_tokens: null }],
     custom_config_list: existingLlmProvider?.custom_config
       ? Object.entries(existingLlmProvider.custom_config)
       : [],
     is_public: existingLlmProvider?.is_public ?? true,
     groups: existingLlmProvider?.groups ?? [],
     deployment_name: existingLlmProvider?.deployment_name ?? null,
+    api_key_changed: false,
   };
 
   // Setup validation schema if required
@@ -81,7 +84,13 @@ export function CustomLLMProviderUpdateForm({
     api_key: Yup.string(),
     api_base: Yup.string(),
     api_version: Yup.string(),
-    model_names: Yup.array(Yup.string().required("Model name is required")),
+    model_configurations: Yup.array(
+      Yup.object({
+        name: Yup.string().required("Model name is required"),
+        is_visible: Yup.boolean().required("Visibility is required"),
+        max_input_tokens: Yup.number().nullable().optional(),
+      })
+    ),
     default_model_name: Yup.string().required("Model name is required"),
     fast_default_model_name: Yup.string().nullable(),
     custom_config_list: Yup.array(),
@@ -91,6 +100,8 @@ export function CustomLLMProviderUpdateForm({
     deployment_name: Yup.string().nullable(),
   });
 
+  const arePaidEnterpriseFeaturesEnabled = usePaidEnterpriseFeaturesEnabled();
+
   return (
     <Formik
       initialValues={initialValues}
@@ -98,7 +109,22 @@ export function CustomLLMProviderUpdateForm({
       onSubmit={async (values, { setSubmitting }) => {
         setSubmitting(true);
 
-        if (values.model_names.length === 0) {
+        // build final payload
+        const finalValues = { ...values };
+        finalValues.model_configurations = finalValues.model_configurations.map(
+          (modelConfiguration) => ({
+            ...modelConfiguration,
+            max_input_tokens:
+              modelConfiguration.max_input_tokens === null ||
+              modelConfiguration.max_input_tokens === undefined
+                ? null
+                : modelConfiguration.max_input_tokens,
+            supports_image_input: false, // doesn't matter, not used
+          })
+        );
+        finalValues.api_key_changed = values.api_key !== initialValues.api_key;
+
+        if (values.model_configurations.length === 0) {
           const fullErrorMsg = "At least one model name is required";
           if (setPopup) {
             setPopup({
@@ -135,18 +161,21 @@ export function CustomLLMProviderUpdateForm({
           }
         }
 
-        const response = await fetch(LLM_PROVIDERS_ADMIN_URL, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            ...values,
-            // For custom llm providers, all model names are displayed
-            display_model_names: values.model_names,
-            custom_config: customConfigProcessing(values.custom_config_list),
-          }),
-        });
+        const response = await fetch(
+          `${LLM_PROVIDERS_ADMIN_URL}${
+            existingLlmProvider ? "" : "?is_creation=true"
+          }`,
+          {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              ...values,
+              custom_config: customConfigProcessing(values.custom_config_list),
+            }),
+          }
+        );
 
         if (!response.ok) {
           const errorMsg = (await response.json()).detail;
@@ -165,7 +194,7 @@ export function CustomLLMProviderUpdateForm({
         }
 
         if (shouldMarkAsDefault) {
-          const newLlmProvider = (await response.json()) as FullLLMProvider;
+          const newLlmProvider = (await response.json()) as LLMProviderView;
           const setDefaultResponse = await fetch(
             `${LLM_PROVIDERS_ADMIN_URL}/${newLlmProvider.id}/default`,
             {
@@ -275,8 +304,9 @@ export function CustomLLMProviderUpdateForm({
             <SubLabel>
               <>
                 <div>
-                  Additional configurations needed by the model provider. Are
-                  passed to litellm via environment variables.
+                  Additional configurations needed by the model provider. These
+                  are passed to litellm via environment + as arguments into the
+                  `completion` call.
                 </div>
 
                 <div className="mt-2">
@@ -290,27 +320,27 @@ export function CustomLLMProviderUpdateForm({
             <FieldArray
               name="custom_config_list"
               render={(arrayHelpers: ArrayHelpers<any[]>) => (
-                <div>
+                <div className="w-full">
                   {formikProps.values.custom_config_list.map((_, index) => {
                     return (
                       <div
                         key={index}
-                        className={index === 0 ? "mt-2" : "mt-6"}
+                        className={(index === 0 ? "mt-2" : "mt-6") + " w-full"}
                       >
-                        <div className="flex">
+                        <div className="flex w-full">
                           <div className="w-full mr-6 border border-border p-3 rounded">
                             <div>
                               <Label>Key</Label>
                               <Field
                                 name={`custom_config_list[${index}][0]`}
                                 className={`
-                                  border 
-                                  border-border 
-                                  bg-background 
-                                  rounded 
-                                  w-full 
-                                  py-2 
-                                  px-3 
+                                  border
+                                  border-border
+                                  bg-background
+                                  rounded
+                                  w-full
+                                  py-2
+                                  px-3
                                   mr-4
                                 `}
                                 autoComplete="off"
@@ -327,13 +357,13 @@ export function CustomLLMProviderUpdateForm({
                               <Field
                                 name={`custom_config_list[${index}][1]`}
                                 className={`
-                                  border 
-                                  border-border 
-                                  bg-background 
-                                  rounded 
-                                  w-full 
-                                  py-2 
-                                  px-3 
+                                  border
+                                  border-border
+                                  bg-background
+                                  rounded
+                                  w-full
+                                  py-2
+                                  px-3
                                   mr-4
                                 `}
                                 autoComplete="off"
@@ -347,7 +377,7 @@ export function CustomLLMProviderUpdateForm({
                           </div>
                           <div className="my-auto">
                             <FiX
-                              className="my-auto w-10 h-10 cursor-pointer hover:bg-hover rounded p-2"
+                              className="my-auto w-10 h-10 cursor-pointer hover:bg-accent-background-hovered rounded p-2"
                               onClick={() => arrayHelpers.remove(index)}
                             />
                           </div>
@@ -372,39 +402,19 @@ export function CustomLLMProviderUpdateForm({
             />
 
             <Separator />
-
             {!existingLlmProvider?.deployment_name && (
-              <TextArrayField
-                name="model_names"
-                label="Model Names"
-                values={formikProps.values}
-                subtext={
-                  <>
-                    List the individual models that you want to make available
-                    as a part of this provider. At least one must be specified.
-                    For the best experience your [Provider Name]/[Model Name]
-                    should match one of the pairs listed{" "}
-                    <a
-                      target="_blank"
-                      href="https://models.litellm.ai/"
-                      className="text-link"
-                      rel="noreferrer"
-                    >
-                      here
-                    </a>
-                    .
-                  </>
-                }
+              <ModelConfigurationField
+                name="model_configurations"
+                formikProps={formikProps as any}
               />
             )}
 
             <Separator />
-
             <TextFormField
               name="default_model_name"
               subtext={`
-              The model to use by default for this provider unless 
-              otherwise specified. Must be one of the models listed 
+              The model to use by default for this provider unless
+              otherwise specified. Must be one of the models listed
               above.`}
               label="Default Model"
               placeholder="E.g. gpt-4"
@@ -413,28 +423,31 @@ export function CustomLLMProviderUpdateForm({
             {!existingLlmProvider?.deployment_name && (
               <TextFormField
                 name="fast_default_model_name"
-                subtext={`The model to use for lighter flows like \`LLM Chunk Filter\` 
-                for this provider. If not set, will use 
+                subtext={`The model to use for lighter flows like \`LLM Chunk Filter\`
+                for this provider. If not set, will use
                 the Default Model configured above.`}
                 label="[Optional] Fast Model"
                 placeholder="E.g. gpt-4"
               />
             )}
 
-            <Separator />
+            {arePaidEnterpriseFeaturesEnabled && (
+              <>
+                <Separator />
+                <AdvancedOptionsToggle
+                  showAdvancedOptions={showAdvancedOptions}
+                  setShowAdvancedOptions={setShowAdvancedOptions}
+                />
 
-            <AdvancedOptionsToggle
-              showAdvancedOptions={showAdvancedOptions}
-              setShowAdvancedOptions={setShowAdvancedOptions}
-            />
-
-            {showAdvancedOptions && (
-              <IsPublicGroupSelector
-                formikProps={formikProps}
-                objectName="LLM Provider"
-                publicToWhom="all users"
-                enforceGroupSelection={true}
-              />
+                {showAdvancedOptions && (
+                  <IsPublicGroupSelector
+                    formikProps={formikProps}
+                    objectName="LLM Provider"
+                    publicToWhom="all users"
+                    enforceGroupSelection={true}
+                  />
+                )}
+              </>
             )}
 
             <div>
@@ -457,6 +470,7 @@ export function CustomLLMProviderUpdateForm({
                   <Button
                     type="button"
                     variant="destructive"
+                    className="ml-3"
                     icon={FiTrash}
                     onClick={async () => {
                       const response = await fetch(

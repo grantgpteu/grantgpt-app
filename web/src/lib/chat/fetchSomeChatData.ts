@@ -13,7 +13,6 @@ import {
 } from "@/lib/types";
 import { ChatSession } from "@/app/chat/interfaces";
 import { Persona } from "@/app/admin/assistants/interfaces";
-import { InputPrompt } from "@/app/admin/prompt-library/interfaces";
 import { fetchLLMProvidersSS } from "@/lib/llm/fetchLLMs";
 import { LLMProviderDescriptor } from "@/app/admin/configuration/llm/interfaces";
 import { Folder } from "@/app/chat/folders/interfaces";
@@ -26,7 +25,6 @@ import {
 import { hasCompletedWelcomeFlowSS } from "@/components/initialSetup/welcome/WelcomeModalWrapper";
 import { fetchAssistantsSS } from "../assistants/fetchAssistantsSS";
 import { NEXT_PUBLIC_DEFAULT_SIDEBAR_OPEN } from "../constants";
-import { checkLLMSupportsImageInput } from "../llm/utils";
 
 interface FetchChatDataResult {
   user?: User | null;
@@ -44,7 +42,6 @@ interface FetchChatDataResult {
   finalDocumentSidebarInitialWidth?: number;
   shouldShowWelcomeModal?: boolean;
   shouldDisplaySourcesIncompleteModal?: boolean;
-  userInputPrompts?: InputPrompt[];
 }
 
 type FetchOption =
@@ -55,11 +52,10 @@ type FetchOption =
   | "assistants"
   | "tags"
   | "llmProviders"
-  | "folders"
-  | "userInputPrompts";
+  | "folders";
 
-/* 
-NOTE: currently unused, but leaving here for future use. 
+/*
+NOTE: currently unused, but leaving here for future use.
 */
 export async function fetchSomeChatData(
   searchParams: { [key: string]: string },
@@ -76,7 +72,6 @@ export async function fetchSomeChatData(
     tags: () => fetchSS("/query/valid-tags"),
     llmProviders: fetchLLMProvidersSS,
     folders: () => fetchSS("/folder"),
-    userInputPrompts: () => fetchSS("/input_prompt?include_public=true"),
   };
 
   // Always fetch auth type metadata
@@ -95,6 +90,7 @@ export async function fetchSomeChatData(
   const authDisabled = authTypeMetadata?.authType === "disabled";
 
   let user: User | null = null;
+
   if (fetchOptions.includes("user")) {
     user = results.shift();
     if (!authDisabled && !user) {
@@ -152,11 +148,6 @@ export async function fetchSomeChatData(
           ? ((await result.json()) as { folders: Folder[] }).folders
           : [];
         break;
-      case "userInputPrompts":
-        result.userInputPrompts = result?.ok
-          ? ((await result.json()) as InputPrompt[])
-          : [];
-        break;
     }
   }
 
@@ -181,7 +172,9 @@ export async function fetchSomeChatData(
     const hasImageCompatibleModel = result.llmProviders?.some(
       (provider) =>
         provider.provider === "openai" ||
-        provider.model_names.some((model) => checkLLMSupportsImageInput(model))
+        provider.model_configurations.some(
+          (modelConfiguration) => modelConfiguration.supports_image_input
+        )
     );
 
     if (!hasImageCompatibleModel) {

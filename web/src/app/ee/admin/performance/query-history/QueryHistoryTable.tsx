@@ -1,4 +1,3 @@
-import { useQueryHistory, useTimeRange } from "../lib";
 import { Separator } from "@/components/ui/separator";
 import {
   Table,
@@ -10,6 +9,7 @@ import {
 } from "@/components/ui/table";
 import Text from "@/components/ui/text";
 
+import { FiDownload } from "react-icons/fi";
 import {
   Select,
   SelectItem,
@@ -20,17 +20,36 @@ import {
 import { ThreeDotsLoader } from "@/components/Loading";
 import { ChatSessionMinimal } from "../usage/types";
 import { timestampToReadableDate } from "@/lib/dateUtils";
-import { FiFrown, FiMinus, FiSmile } from "react-icons/fi";
-import { useCallback, useState } from "react";
-import { Feedback } from "@/lib/types";
-import { DateRange, DateRangeSelector } from "../DateRangeSelector";
+import { FiFrown, FiMinus, FiSmile, FiMeh } from "react-icons/fi";
+import { Dispatch, SetStateAction, useCallback, useState } from "react";
+import { Feedback, TaskStatus } from "@/lib/types";
+import {
+  DateRange,
+  AdminDateRangeSelector,
+} from "../../../../../components/dateRangeSelectors/AdminDateRangeSelector";
 import { PageSelector } from "@/components/PageSelector";
 import Link from "next/link";
 import { FeedbackBadge } from "./FeedbackBadge";
-import { DownloadAsCSV } from "./DownloadAsCSV";
+import { KickoffCSVExport } from "./KickoffCSVExport";
 import CardSection from "@/components/admin/CardSection";
-
-const NUM_IN_PAGE = 20;
+import usePaginatedFetch from "@/hooks/usePaginatedFetch";
+import { ErrorCallout } from "@/components/ErrorCallout";
+import { errorHandlingFetcher } from "@/lib/fetcher";
+import useSWR from "swr";
+import { TaskQueueState } from "./types";
+import { withRequestId } from "./utils";
+import {
+  DOWNLOAD_QUERY_HISTORY_URL,
+  LIST_QUERY_HISTORY_URL,
+  NUM_IN_PAGE,
+  ITEMS_PER_PAGE,
+  PAGES_PER_BATCH,
+  PREVIOUS_CSV_TASK_BUTTON_NAME,
+} from "./constants";
+import { humanReadableFormatWithTime } from "@/lib/time";
+import { Modal } from "@/components/Modal";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 function QueryHistoryTableRow({
   chatSessionMinimal,
@@ -40,11 +59,13 @@ function QueryHistoryTableRow({
   return (
     <TableRow
       key={chatSessionMinimal.id}
-      className="hover:bg-hover-light cursor-pointer relative"
+      className="hover:bg-accent-background cursor-pointer relative"
     >
       <TableCell>
         <Text className="whitespace-normal line-clamp-5">
-          {chatSessionMinimal.first_user_message || "-"}
+          {chatSessionMinimal.first_user_message ||
+            chatSessionMinimal.name ||
+            "-"}
         </Text>
       </TableCell>
       <TableCell>
@@ -108,6 +129,12 @@ function SelectFeedbackType({
                 <span>Dislike</span>
               </div>
             </SelectItem>
+            <SelectItem value="mixed">
+              <div className="flex items-center gap-2">
+                <FiMeh className="h-4 w-4" />
+                <span>Mixed</span>
+              </div>
+            </SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -115,50 +142,197 @@ function SelectFeedbackType({
   );
 }
 
-export function QueryHistoryTable() {
-  const [selectedFeedbackType, setSelectedFeedbackType] = useState<
-    Feedback | "all"
-  >("all");
-  const [timeRange, setTimeRange] = useTimeRange();
+function ExportBadge({ status }: { status: TaskStatus }) {
+  if (status === "SUCCESS") return <Badge variant="success">Success</Badge>;
+  else if (status === "FAILURE")
+    return <Badge variant="destructive">Failure</Badge>;
+  else if (status === "PENDING" || status === "STARTED")
+    return <Badge variant="in_progress">Pending</Badge>;
+  else return <></>;
+}
 
-  const { data: chatSessionData } = useQueryHistory({
-    selectedFeedbackType:
-      selectedFeedbackType === "all" ? null : selectedFeedbackType,
-    timeRange,
+function PreviousQueryHistoryExportsModal({
+  setShowModal,
+}: {
+  setShowModal: Dispatch<SetStateAction<boolean>>;
+}) {
+  const { data: queryHistoryTasks } = useSWR<TaskQueueState[]>(
+    LIST_QUERY_HISTORY_URL,
+    errorHandlingFetcher,
+    {
+      refreshInterval: 3000,
+    }
+  );
+
+  const tasks = (queryHistoryTasks ?? []).map((queryHistory) => ({
+    taskId: queryHistory.task_id,
+    start: new Date(queryHistory.start),
+    end: new Date(queryHistory.end),
+    status: queryHistory.status,
+    startTime: queryHistory.start_time,
+  }));
+
+  // sort based off of "most-recently-exported" CSV file.
+  tasks.sort((task_a, task_b) => {
+    if (task_a.startTime < task_b.startTime) return 1;
+    else if (task_a.startTime > task_b.startTime) return -1;
+    else return 0;
   });
 
-  const [page, setPage] = useState(1);
-
-  const onTimeRangeChange = useCallback(
-    (value: DateRange) => {
-      if (value) {
-        setTimeRange((prevTimeRange) => ({
-          ...prevTimeRange,
-          from: new Date(value.from),
-          to: new Date(value.to),
-        }));
-      }
-    },
-    [setTimeRange]
+  const [taskPage, setTaskPage] = useState(1);
+  const totalTaskPages = Math.ceil(tasks.length / NUM_IN_PAGE);
+  const paginatedTasks = tasks.slice(
+    NUM_IN_PAGE * (taskPage - 1),
+    NUM_IN_PAGE * taskPage
   );
 
   return (
-    <CardSection className="mt-8">
-      <>
+    <Modal
+      title="Previous Query History Exports"
+      onOutsideClick={() => setShowModal(false)}
+      className="overflow-y-scroll h-1/2"
+    >
+      <div className="flex flex-col h-full w-full py-4">
+        <div className="flex flex-1">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Generated At</TableHead>
+                <TableHead>Start Range</TableHead>
+                <TableHead>End Range</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Download</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {paginatedTasks.map((task, index) => (
+                <TableRow key={index}>
+                  <TableCell>
+                    {humanReadableFormatWithTime(task.startTime)}
+                  </TableCell>
+                  <TableCell>{task.start.toDateString()}</TableCell>
+                  <TableCell>{task.end.toDateString()}</TableCell>
+                  <TableCell>
+                    <ExportBadge status={task.status} />
+                  </TableCell>
+                  <TableCell>
+                    {task.status === "SUCCESS" ? (
+                      <Link
+                        className="flex justify-center"
+                        href={withRequestId(
+                          DOWNLOAD_QUERY_HISTORY_URL,
+                          task.taskId
+                        )}
+                      >
+                        <FiDownload color="primary" />
+                      </Link>
+                    ) : (
+                      <FiDownload color="primary" className="opacity-20" />
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+
+        <div className="flex mt-3">
+          <div className="mx-auto">
+            <PageSelector
+              currentPage={taskPage}
+              totalPages={totalTaskPages}
+              onPageChange={setTaskPage}
+            />
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+export function QueryHistoryTable() {
+  const [dateRange, setDateRange] = useState<DateRange>(undefined);
+  const [filters, setFilters] = useState<{
+    feedback_type?: Feedback | "all";
+    start_time?: string;
+    end_time?: string;
+  }>({});
+
+  const [showModal, setShowModal] = useState(false);
+
+  const {
+    currentPageData: chatSessionData,
+    isLoading,
+    error,
+    currentPage,
+    totalPages,
+    goToPage,
+  } = usePaginatedFetch<ChatSessionMinimal>({
+    itemsPerPage: ITEMS_PER_PAGE,
+    pagesPerBatch: PAGES_PER_BATCH,
+    endpoint: "/api/admin/chat-session-history",
+    filter: filters,
+  });
+
+  const onTimeRangeChange = useCallback((value: DateRange) => {
+    setDateRange(value);
+
+    if (value?.from && value?.to) {
+      setFilters((prev) => ({
+        ...prev,
+        start_time: value.from.toISOString(),
+        end_time: value.to.toISOString(),
+      }));
+    } else {
+      setFilters((prev) => {
+        const newFilters = { ...prev };
+        delete newFilters.start_time;
+        delete newFilters.end_time;
+        return newFilters;
+      });
+    }
+  }, []);
+
+  if (error) {
+    return (
+      <ErrorCallout
+        errorTitle="Error fetching query history"
+        errorMsg={error?.message}
+      />
+    );
+  }
+
+  return (
+    <>
+      <CardSection className="mt-8">
         <div className="flex">
           <div className="gap-y-3 flex flex-col">
             <SelectFeedbackType
-              value={selectedFeedbackType || "all"}
-              onValueChange={setSelectedFeedbackType}
+              value={filters.feedback_type || "all"}
+              onValueChange={(value) => {
+                setFilters((prev) => {
+                  const newFilters = { ...prev };
+                  if (value === "all") {
+                    delete newFilters.feedback_type;
+                  } else {
+                    newFilters.feedback_type = value;
+                  }
+                  return newFilters;
+                });
+              }}
             />
 
-            <DateRangeSelector
-              value={timeRange}
+            <AdminDateRangeSelector
+              value={dateRange}
               onValueChange={onTimeRangeChange}
             />
           </div>
-
-          <DownloadAsCSV />
+          <div className="flex flex-row w-full items-center gap-x-2">
+            <KickoffCSVExport dateRange={dateRange} />
+            <Button variant="secondary" onClick={() => setShowModal(true)}>
+              {PREVIOUS_CSV_TASK_BUTTON_NAME}
+            </Button>
+          </div>
         </div>
         <Separator />
         <Table className="mt-5">
@@ -172,38 +346,42 @@ export function QueryHistoryTable() {
               <TableHead>Date</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
-            {chatSessionData &&
-              chatSessionData
-                .slice(NUM_IN_PAGE * (page - 1), NUM_IN_PAGE * page)
-                .map((chatSessionMinimal) => (
-                  <QueryHistoryTableRow
-                    key={chatSessionMinimal.id}
-                    chatSessionMinimal={chatSessionMinimal}
-                  />
-                ))}
-          </TableBody>
+          {isLoading ? (
+            <TableBody>
+              <TableRow>
+                <TableCell colSpan={6} className="text-center">
+                  <ThreeDotsLoader />
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          ) : (
+            <TableBody>
+              {chatSessionData?.map((chatSessionMinimal) => (
+                <QueryHistoryTableRow
+                  key={chatSessionMinimal.id}
+                  chatSessionMinimal={chatSessionMinimal}
+                />
+              ))}
+            </TableBody>
+          )}
         </Table>
 
         {chatSessionData && (
           <div className="mt-3 flex">
             <div className="mx-auto">
               <PageSelector
-                totalPages={Math.ceil(chatSessionData.length / NUM_IN_PAGE)}
-                currentPage={page}
-                onPageChange={(newPage) => {
-                  setPage(newPage);
-                  window.scrollTo({
-                    top: 0,
-                    left: 0,
-                    behavior: "smooth",
-                  });
-                }}
+                totalPages={totalPages}
+                currentPage={currentPage}
+                onPageChange={goToPage}
               />
             </div>
           </div>
         )}
-      </>
-    </CardSection>
+      </CardSection>
+
+      {showModal && (
+        <PreviousQueryHistoryExportsModal setShowModal={setShowModal} />
+      )}
+    </>
   );
 }

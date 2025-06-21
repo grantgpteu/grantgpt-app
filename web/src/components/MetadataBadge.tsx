@@ -13,7 +13,7 @@ export function MetadataBadge({
       text-xs 
       text-strong
       flex
-      bg-hover 
+      bg-accent-background-hovered 
       rounded-full 
       px-1
       py-0.5 
@@ -27,7 +27,9 @@ export function MetadataBadge({
           size: 12,
           className: flexNone ? "flex-none" : "mr-0.5 my-auto",
         })}
-      <div className="my-auto flex">{value}</div>
+      <p className="max-w-[6rem] text-ellipsis overflow-hidden truncate whitespace-nowrap">
+        {value}
+      </p>
     </div>
   );
 }

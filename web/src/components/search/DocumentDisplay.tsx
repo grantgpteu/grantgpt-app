@@ -1,10 +1,9 @@
 "use client";
 import React from "react";
 import {
-  DanswerDocument,
+  OnyxDocument,
   DocumentRelevance,
-  LoadedDanswerDocument,
-  SearchDanswerDocument,
+  SearchOnyxDocument,
 } from "@/lib/search/interfaces";
 import { DocumentFeedbackBlock } from "./DocumentFeedbackBlock";
 import { useContext, useState } from "react";
@@ -12,22 +11,28 @@ import { PopupSpec } from "../admin/connectors/Popup";
 import { DocumentUpdatedAtBadge } from "./DocumentUpdatedAtBadge";
 import { SourceIcon } from "../SourceIcon";
 import { MetadataBadge } from "../MetadataBadge";
-import { BookIcon, GlobeIcon, LightBulbIcon, SearchIcon } from "../icons/icons";
+import { BookIcon, LightBulbIcon } from "../icons/icons";
 
 import { FaStar } from "react-icons/fa";
 import { FiTag } from "react-icons/fi";
 import { SettingsContext } from "../settings/SettingsProvider";
 import { CustomTooltip, TooltipGroup } from "../tooltip/CustomTooltip";
 import { WarningCircle } from "@phosphor-icons/react";
-import TextView from "../chat_search/TextView";
-import { SearchResultIcon } from "../SearchResultIcon";
+import TextView from "../chat/TextView";
+import { openDocument } from "@/lib/search/utils";
+import { SubQuestionDetail } from "@/app/chat/interfaces";
 
 export const buildDocumentSummaryDisplay = (
   matchHighlights: string[],
   blurb: string
 ) => {
-  if (!matchHighlights || matchHighlights.length === 0) {
-    // console.log("no match highlights", matchHighlights);
+  // if there are no match highlights, or if it's really short, just use the blurb
+  // this is to prevent the UI from showing something like `...` for the summary
+  const MIN_MATCH_HIGHLIGHT_LENGTH = 5;
+  if (
+    !matchHighlights ||
+    matchHighlights.length <= MIN_MATCH_HIGHLIGHT_LENGTH
+  ) {
     return blurb;
   }
 
@@ -69,12 +74,18 @@ export const buildDocumentSummaryDisplay = (
       sections.push(["...", false, false]);
     }
   });
+
   if (sections.length == 0) {
     return;
   }
 
-  let previousIsContinuation = sections[0][2];
-  let previousIsBold = sections[0][1];
+  const firstSection = sections[0];
+  if (firstSection === undefined) {
+    return;
+  }
+
+  let previousIsContinuation = firstSection[2];
+  let previousIsBold = firstSection[1];
   let currentText = "";
   const finalJSX = [] as (JSX.Element | string)[];
   sections.forEach(([word, shouldBeBold, isContinuation], index) => {
@@ -88,7 +99,7 @@ export const buildDocumentSummaryDisplay = (
             finalJSX[finalJSX.length - 1] = finalJSX[finalJSX.length - 1] + " ";
           }
           finalJSX.push(
-            <b key={index} className="text-default bg-highlight-text">
+            <b key={index} className="text-text font-bold">
               {currentText}
             </b>
           );
@@ -126,7 +137,7 @@ export const buildDocumentSummaryDisplay = (
 export function DocumentMetadataBlock({
   document,
 }: {
-  document: DanswerDocument;
+  document: OnyxDocument;
 }) {
   // don't display super long tags, as they are ugly
   const MAXIMUM_TAG_LENGTH = 40;
@@ -162,7 +173,7 @@ export function DocumentMetadataBlock({
 }
 
 interface DocumentDisplayProps {
-  document: SearchDanswerDocument;
+  document: SearchOnyxDocument;
   messageId: number | null;
   documentRank: number;
   isSelected: boolean;
@@ -190,7 +201,7 @@ export const DocumentDisplay = ({
     document.relevance_explanation ?? additional_relevance?.content;
   const settings = useContext(SettingsContext);
   const [presentingDocument, setPresentingDocument] =
-    useState<DanswerDocument | null>(null);
+    useState<OnyxDocument | null>(null);
 
   const handleViewFile = async () => {
     setPresentingDocument(document);
@@ -315,7 +326,7 @@ export const AgenticDocumentDisplay = ({
 }: DocumentDisplayProps) => {
   const [isHovered, setIsHovered] = useState(false);
   const [presentingDocument, setPresentingDocument] =
-    useState<DanswerDocument | null>(null);
+    useState<OnyxDocument | null>(null);
 
   const [alternativeToggled, setAlternativeToggled] = useState(false);
 
@@ -425,33 +436,74 @@ export function CompactDocumentCard({
   document,
   icon,
   url,
+  updatePresentingDocument,
 }: {
-  document: LoadedDanswerDocument;
+  document: OnyxDocument;
   icon?: React.ReactNode;
   url?: string;
+  updatePresentingDocument: (document: OnyxDocument) => void;
 }) {
   return (
-    <div className="max-w-[250px]  pb-0 pt-0 mt-0 flex gap-y-0  flex-col  content-start items-start gap-0 ">
-      <h3 className="text-sm font-semibold flex  items-center gap-x-1 text-text-900 pt-0 mt-0 truncate w-full">
+    <div
+      onClick={() => {
+        openDocument(document, updatePresentingDocument);
+      }}
+      className="max-w-[250px]  gap-y-1 cursor-pointer pb-0 pt-0 mt-0 flex gap-y-0  flex-col  content-start items-start gap-0 "
+    >
+      <div className="text-sm  flex gap-x-2 !pb-0 !mb-0 font-semibold flex  items-center gap-x-1 text-text-900 pt-0 mt-0  w-full">
         {icon}
-        {(document.semantic_identifier || document.document_id).slice(0, 40)}
-        {(document.semantic_identifier || document.document_id).length > 40 &&
-          "..."}
-      </h3>
-      {document.blurb && (
-        <p className="text-xs  mb-0 text-gray-600 line-clamp-2">
-          {document.blurb}
+        <p className="gap-0 p-0 m-0 line-clamp-2">
+          {(document.semantic_identifier || document.document_id).slice(0, 40)}
+          {(document.semantic_identifier || document.document_id).length > 40 &&
+            "..."}
         </p>
+      </div>
+      {document.blurb && (
+        <div className="text-xs mb-0 text-neutral-600 dark:text-neutral-300 line-clamp-2">
+          {document.blurb}
+        </div>
       )}
       {document.updated_at && (
         <div className=" flex mt-0 pt-0 items-center justify-between w-full ">
           {!isNaN(new Date(document.updated_at).getTime()) && (
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-text-500">
               Updated {new Date(document.updated_at).toLocaleDateString()}
             </span>
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+export function CompactQuestionCard({
+  question,
+  openQuestion,
+}: {
+  question: SubQuestionDetail;
+  openQuestion: (question: SubQuestionDetail) => void;
+}) {
+  return (
+    <div
+      onClick={() => openQuestion(question)}
+      className="max-w-[350px] gap-y-1 cursor-pointer pb-0 pt-0 mt-0 flex gap-y-0 flex-col content-start items-start gap-0"
+    >
+      <div className="text-sm !pb-0 !mb-0 font-semibold flex items-center gap-x-1 text-text-900 pt-0 mt-0 truncate w-full">
+        Question
+      </div>
+      <div className="text-xs mb-0 text-text-600 line-clamp-2">
+        {question.question}
+      </div>
+      <div className="flex mt-0 pt-0 items-center justify-between w-full">
+        <span className="text-xs text-text-500">
+          {question.context_docs?.top_documents.length || 0} context docs
+        </span>
+        {question.sub_queries && (
+          <span className="text-xs text-text-500">
+            {question.sub_queries.length} subqueries
+          </span>
+        )}
+      </div>
     </div>
   );
 }

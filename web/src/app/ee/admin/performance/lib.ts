@@ -1,22 +1,16 @@
 import { errorHandlingFetcher } from "@/lib/fetcher";
 import useSWR, { mutate } from "swr";
-import {
-  ChatSessionMinimal,
-  DanswerBotAnalytics,
-  QueryAnalytics,
-  UserAnalytics,
-} from "./usage/types";
+import { OnyxBotAnalytics, QueryAnalytics, UserAnalytics } from "./usage/types";
 import { useState } from "react";
 import { buildApiPath } from "@/lib/urlBuilder";
-import { Feedback } from "@/lib/types";
 
 import {
   convertDateToEndOfDay,
   convertDateToStartOfDay,
   getXDaysAgo,
-} from "./dateUtils";
-import { DateRange, THIRTY_DAYS } from "./DateRangeSelector";
-import { DateRangePickerValue } from "@/app/ee/admin/performance/DateRangeSelector";
+} from "../../../../components/dateRangeSelectors/dateUtils";
+import { THIRTY_DAYS } from "../../../../components/dateRangeSelectors/AdminDateRangeSelector";
+import { DateRangePickerValue } from "@/components/dateRangeSelectors/AdminDateRangeSelector";
 
 export const useTimeRange = () => {
   return useState<DateRangePickerValue>({
@@ -52,37 +46,16 @@ export const useUserAnalytics = (timeRange: DateRangePickerValue) => {
   };
 };
 
-export const useDanswerBotAnalytics = (timeRange: DateRangePickerValue) => {
-  const url = buildApiPath("/api/analytics/admin/danswerbot", {
+export const useOnyxBotAnalytics = (timeRange: DateRangePickerValue) => {
+  const url = buildApiPath("/api/analytics/admin/onyxbot", {
     start: convertDateToStartOfDay(timeRange.from)?.toISOString(),
     end: convertDateToEndOfDay(timeRange.to)?.toISOString(),
   });
-  const swrResponse = useSWR<DanswerBotAnalytics[]>(url, errorHandlingFetcher); // TODO
+  const swrResponse = useSWR<OnyxBotAnalytics[]>(url, errorHandlingFetcher); // TODO
 
   return {
     ...swrResponse,
-    refreshDanswerBotAnalytics: () => mutate(url),
-  };
-};
-
-export const useQueryHistory = ({
-  selectedFeedbackType,
-  timeRange,
-}: {
-  selectedFeedbackType: Feedback | null;
-  timeRange: DateRange;
-}) => {
-  const url = buildApiPath("/api/admin/chat-session-history", {
-    feedback_type: selectedFeedbackType,
-    start: convertDateToStartOfDay(timeRange?.from)?.toISOString(),
-    end: convertDateToEndOfDay(timeRange?.to)?.toISOString(),
-  });
-
-  const swrResponse = useSWR<ChatSessionMinimal[]>(url, errorHandlingFetcher);
-
-  return {
-    ...swrResponse,
-    refreshQueryHistory: () => mutate(url),
+    refreshOnyxBotAnalytics: () => mutate(url),
   };
 };
 
@@ -92,7 +65,9 @@ export function getDatesList(startDate: Date): string[] {
 
   for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
     const dateStr = d.toISOString().split("T")[0]; // convert date object to 'YYYY-MM-DD' format
-    datesList.push(dateStr);
+    if (dateStr !== undefined) {
+      datesList.push(dateStr);
+    }
   }
 
   return datesList;

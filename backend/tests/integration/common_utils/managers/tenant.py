@@ -4,9 +4,9 @@ from datetime import timedelta
 import jwt
 import requests
 
-from danswer.server.manage.models import AllUsersResponse
-from danswer.server.models import FullUserSnapshot
-from danswer.server.models import InvitedUserSnapshot
+from onyx.server.manage.models import AllUsersResponse
+from onyx.server.models import FullUserSnapshot
+from onyx.server.models import InvitedUserSnapshot
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.constants import GENERAL_HEADERS
 from tests.integration.common_utils.test_models import DATestUser
@@ -25,43 +25,16 @@ def generate_auth_token() -> str:
 
 class TenantManager:
     @staticmethod
-    def create(
-        tenant_id: str | None = None,
-        initial_admin_email: str | None = None,
-        referral_source: str | None = None,
-    ) -> dict[str, str]:
-        body = {
-            "tenant_id": tenant_id,
-            "initial_admin_email": initial_admin_email,
-            "referral_source": referral_source,
-        }
-
-        token = generate_auth_token()
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "X-API-KEY": "",
-            "Content-Type": "application/json",
-        }
-
-        response = requests.post(
-            url=f"{API_SERVER_URL}/tenants/create",
-            json=body,
-            headers=headers,
-        )
-
-        response.raise_for_status()
-
-        return response.json()
-
-    @staticmethod
     def get_all_users(
         user_performing_action: DATestUser | None = None,
     ) -> AllUsersResponse:
         response = requests.get(
             url=f"{API_SERVER_URL}/manage/users",
-            headers=user_performing_action.headers
-            if user_performing_action
-            else GENERAL_HEADERS,
+            headers=(
+                user_performing_action.headers
+                if user_performing_action
+                else GENERAL_HEADERS
+            ),
         )
         response.raise_for_status()
 
@@ -69,8 +42,10 @@ class TenantManager:
         return AllUsersResponse(
             accepted=[FullUserSnapshot(**user) for user in data["accepted"]],
             invited=[InvitedUserSnapshot(**user) for user in data["invited"]],
+            slack_users=[FullUserSnapshot(**user) for user in data["slack_users"]],
             accepted_pages=data["accepted_pages"],
             invited_pages=data["invited_pages"],
+            slack_users_pages=data["slack_users_pages"],
         )
 
     @staticmethod

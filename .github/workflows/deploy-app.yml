@@ -31,8 +31,64 @@ jobs:
           
           cd ~/grantgpt/
           
-          rm -r *
-          mv /tmp/project.tar.gz project.tar.gz 
+          # Stop services first to prevent file locks
+          cd deployment/docker_compose
+          docker compose -f docker-compose.prod.yml -p danswer-stack down || true
+          cd ~/grantgpt/
+          
+          # Improved cleanup: Remove directories recursively, preserve specific paths
+          # Remove all top-level items except 'deployment' directory
+          for item in *; do
+            if [ "$item" != "deployment" ] && [ "$item" != "." ] && [ "$item" != ".." ]; then
+              rm -rf "$item"
+            fi
+          done
+          
+          # Remove all hidden files/directories at root except .git if it exists
+          for item in .*; do
+            if [ "$item" != "." ] && [ "$item" != ".." ] && [ "$item" != ".git" ]; then
+              rm -rf "$item"
+            fi
+          done
+          
+          # Clean deployment directory contents except 'data'
+          if [ -d "deployment" ]; then
+            cd deployment/
+            for item in *; do
+              if [ "$item" != "data" ] && [ "$item" != "." ] && [ "$item" != ".." ]; then
+                rm -rf "$item"
+              fi
+            done
+            
+            # Clean hidden files in deployment except .git if it exists
+            for item in .*; do
+              if [ "$item" != "." ] && [ "$item" != ".." ] && [ "$item" != ".git" ]; then
+                rm -rf "$item"
+              fi
+            done
+            
+            # Clean deployment/data contents except 'certbot'
+            if [ -d "data" ]; then
+              cd data/
+              for item in *; do
+                if [ "$item" != "certbot" ] && [ "$item" != "." ] && [ "$item" != ".." ]; then
+                  rm -rf "$item"
+                fi
+              done
+              
+              # Clean hidden files in data except .git if it exists
+              for item in .*; do
+                if [ "$item" != "." ] && [ "$item" != ".." ] && [ "$item" != ".git" ]; then
+                  rm -rf "$item"
+                fi
+              done
+              cd ../
+            fi
+            cd ../
+          fi
+          
+          # Extract new code
+          mv /tmp/project.tar.gz project.tar.gz
           tar -xzf project.tar.gz
           rm project.tar.gz
           
@@ -43,8 +99,6 @@ jobs:
           cp ~/env_files/.env.nginx .env.nginx
           
           # Deploy
-          docker compose -f docker-compose.prod.yml -p danswer-stack down
           docker compose -f docker-compose.prod.yml -p danswer-stack up -d --build --force-recreate
-          ./init-letsencrypt.sh
           
         EOF

@@ -18,7 +18,7 @@ from onyx.connectors.interfaces import LoadConnector
 from onyx.connectors.models import Document
 from onyx.connectors.models import ImageSection
 from onyx.connectors.models import TextSection
-from onyx.db.engine import get_session_with_current_tenant
+from onyx.db.engine.sql_engine import get_session_with_current_tenant
 from onyx.file_processing.extract_file_text import extract_text_and_images
 from onyx.file_processing.extract_file_text import get_file_ext
 from onyx.file_processing.extract_file_text import is_accepted_file_ext
@@ -171,10 +171,12 @@ def _process_file(
         custom_tags.update(more_custom_tags)
 
         # File-specific metadata overrides metadata processed so far
+        source_type = onyx_metadata.source_type or source_type
         primary_owners = onyx_metadata.primary_owners or primary_owners
         secondary_owners = onyx_metadata.secondary_owners or secondary_owners
         time_updated = onyx_metadata.doc_updated_at or time_updated
         file_display_name = onyx_metadata.file_display_name or file_display_name
+        title = onyx_metadata.title or onyx_metadata.file_display_name or title
         link = onyx_metadata.link or link
 
     # Build sections: first the text as a single Section

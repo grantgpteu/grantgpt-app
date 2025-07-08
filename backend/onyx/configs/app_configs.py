@@ -222,17 +222,6 @@ try:
 except ValueError:
     POSTGRES_POOL_RECYCLE = POSTGRES_POOL_RECYCLE_DEFAULT
 
-# Experimental setting to control idle transactions
-POSTGRES_IDLE_SESSIONS_TIMEOUT_DEFAULT = 0  # milliseconds
-try:
-    POSTGRES_IDLE_SESSIONS_TIMEOUT = int(
-        os.environ.get(
-            "POSTGRES_IDLE_SESSIONS_TIMEOUT", POSTGRES_IDLE_SESSIONS_TIMEOUT_DEFAULT
-        )
-    )
-except ValueError:
-    POSTGRES_IDLE_SESSIONS_TIMEOUT = POSTGRES_IDLE_SESSIONS_TIMEOUT_DEFAULT
-
 USE_IAM_AUTH = os.getenv("USE_IAM_AUTH", "False").lower() == "true"
 
 
@@ -794,3 +783,7 @@ S3_VERIFY_SSL = os.environ.get("S3_VERIFY_SSL", "").lower() == "true"
 # S3/MinIO Access Keys
 S3_AWS_ACCESS_KEY_ID = os.environ.get("S3_AWS_ACCESS_KEY_ID")
 S3_AWS_SECRET_ACCESS_KEY = os.environ.get("S3_AWS_SECRET_ACCESS_KEY")
+
+# Forcing Vespa Language
+# English: en, German:de, etc. See: https://docs.vespa.ai/en/linguistics.html
+VESPA_LANGUAGE_OVERRIDE = os.environ.get("VESPA_LANGUAGE_OVERRIDE")

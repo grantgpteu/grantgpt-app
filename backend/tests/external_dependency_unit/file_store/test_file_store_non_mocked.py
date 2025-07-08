@@ -18,18 +18,17 @@ from botocore.exceptions import ClientError
 from sqlalchemy.orm import Session
 
 from onyx.configs.constants import FileOrigin
-from onyx.db.engine import get_session_context_manager
-from onyx.db.engine import SqlEngine
+from onyx.db.engine.sql_engine import get_session_with_current_tenant
 from onyx.file_store.file_store import S3BackedFileStore
 from onyx.utils.logger import setup_logger
 from shared_configs.contextvars import CURRENT_TENANT_ID_CONTEXTVAR
+from tests.external_dependency_unit.constants import TEST_TENANT_ID
 
 logger = setup_logger()
 
 
 TEST_BUCKET_NAME: str = "onyx-file-store-tests"
 TEST_FILE_PREFIX: str = "test-files"
-TEST_TENANT_ID: str = "public"
 
 
 # Type definitions for test data
@@ -102,30 +101,6 @@ def _get_all_backend_configs() -> List[BackendConfig]:
         )
 
     return configs
-
-
-@pytest.fixture(scope="function")
-def db_session() -> Generator[Session, None, None]:
-    """Create a database session for testing using the actual PostgreSQL database"""
-    # Make sure that the db engine is initialized before any tests are run
-    SqlEngine.init_engine(
-        pool_size=10,
-        max_overflow=5,
-    )
-    with get_session_context_manager() as session:
-        yield session
-
-
-@pytest.fixture(scope="function")
-def tenant_context() -> Generator[None, None, None]:
-    """Set up tenant context for testing"""
-    # Set the tenant context for the test
-    token = CURRENT_TENANT_ID_CONTEXTVAR.set(TEST_TENANT_ID)
-    try:
-        yield
-    finally:
-        # Reset the tenant context after the test
-        CURRENT_TENANT_ID_CONTEXTVAR.reset(token)
 
 
 @pytest.fixture(
@@ -850,7 +825,7 @@ class TestS3BackedFileStore:
                 token = CURRENT_TENANT_ID_CONTEXTVAR.set(TEST_TENANT_ID)
                 try:
                     # Create a new database session for each worker to avoid conflicts
-                    with get_session_context_manager() as worker_session:
+                    with get_session_with_current_tenant() as worker_session:
                         worker_file_store = S3BackedFileStore(
                             db_session=worker_session,
                             bucket_name=current_bucket_name,

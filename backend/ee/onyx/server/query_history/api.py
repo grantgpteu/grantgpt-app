@@ -37,7 +37,7 @@ from onyx.configs.constants import QueryHistoryType
 from onyx.configs.constants import SessionType
 from onyx.db.chat import get_chat_session_by_id
 from onyx.db.chat import get_chat_sessions_by_user
-from onyx.db.engine import get_session
+from onyx.db.engine.sql_engine import get_session
 from onyx.db.enums import TaskStatus
 from onyx.db.file_record import get_query_history_export_files
 from onyx.db.models import ChatSession
@@ -49,6 +49,7 @@ from onyx.server.documents.models import PaginatedReturn
 from onyx.server.query_and_chat.models import ChatSessionDetails
 from onyx.server.query_and_chat.models import ChatSessionsResponse
 from onyx.utils.threadpool_concurrency import parallel_yield
+from shared_configs.contextvars import get_current_tenant_id
 
 router = APIRouter()
 
@@ -334,6 +335,7 @@ def start_query_history_export(
             "start": start,
             "end": end,
             "start_time": start_time,
+            "tenant_id": get_current_tenant_id(),
         },
     )
 
